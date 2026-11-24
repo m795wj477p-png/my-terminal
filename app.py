@@ -90,6 +90,67 @@ def show_macro():
     fig.update_layout(template="plotly_dark", height=400, title=choice)
     st.plotly_chart(fig, use_container_width=True)
 
+UK_GROUPS = {
+    "UK Indices": {"FTSE 100": "^FTSE", "FTSE 250": "^FTMC", "FTSE All-Share": "^FTAS"},
+    "Sterling": {"GBP/USD": "GBPUSD=X", "GBP/EUR": "GBPEUR=X",
+                 "GBP/JPY": "GBPJPY=X", "GBP/CHF": "GBPCHF=X"},
+    "Gilts & Bonds (ETF proxies)": {"Core UK Gilts": "IGLT.L", "Short Gilts": "IGLS.L",
+                                    "Index-linked Gilts": "INXG.L"},
+}
+
+UK_SECTORS = {
+    "Banks": {"HSBC": "HSBA.L", "Barclays": "BARC.L", "Lloyds": "LLOY.L"},
+    "Energy": {"Shell": "SHEL.L", "BP": "BP.L"},
+    "Pharma": {"AstraZeneca": "AZN.L", "GSK": "GSK.L"},
+    "Consumer": {"Unilever": "ULVR.L", "Diageo": "DGE.L", "Tesco": "TSCO.L"},
+    "Mining": {"Rio Tinto": "RIO.L", "Glencore": "GLEN.L"},
+    "Telecom/Tech": {"Vodafone": "VOD.L", "BT": "BT-A.L", "Sage": "SGE.L"},
+}
+
+def show_uk():
+    st.subheader("UK Overview")
+    symbols = tuple(s for g in UK_GROUPS.values() for s in g.values())
+    quotes = get_macro_quotes(symbols)
+    for group, items in UK_GROUPS.items():
+        st.markdown(f"### {group}")
+        cols = st.columns(len(items))
+        for col, (name, sym) in zip(cols, items.items()):
+            price, chg = quotes[sym]
+            if price is None:
+                col.metric(name, "n/a")
+            else:
+                col.metric(name, f"{price:,.2f}", f"{chg:+.2f}%")
+
+    st.markdown("### Big FTSE stocks by sector (daily % change)")
+    stock_symbols = tuple(s for g in UK_SECTORS.values() for s in g.values())
+    stock_quotes = get_macro_quotes(stock_symbols)
+    rows = []
+    for sector, items in UK_SECTORS.items():
+        for name, sym in items.items():
+            price, chg = stock_quotes[sym]
+            if chg is not None:
+                rows.append({"Sector": sector, "Stock": name, "Price": price, "Change %": chg})
+    if rows:
+        df = pd.DataFrame(rows).sort_values("Change %")
+        colors = ["#ff3b3b" if c < 0 else "#00ff66" for c in df["Change %"]]
+        fig = go.Figure(go.Bar(x=df["Change %"], y=df["Stock"], orientation="h",
+                               marker_color=colors))
+        fig.update_layout(template="plotly_dark", height=550)
+        st.plotly_chart(fig, use_container_width=True)
+        sector_avg = df.groupby("Sector")["Change %"].mean().sort_values(ascending=False)
+        st.markdown("### Average move by sector")
+        st.table(sector_avg.round(2).rename("Avg Change %"))
+    else:
+        st.warning("No stock data came back. Try again in a minute.")
+
+    st.markdown("### Chart")
+    all_names = {n: s for g in UK_GROUPS.values() for n, s in g.items()}
+    all_names.update({n: s for g in UK_SECTORS.values() for n, s in g.items()})
+    choice = st.selectbox("Pick a UK asset", list(all_names))
+    hist = get_history(all_names[choice], "1y", "1d")
+    fig2 = go.Figure(go.Scatter(x=hist.index, y=hist["Close"], line=dict(color="#ffb000")))
+    fig2.update_layout(template="plotly_dark", height=400, title=choice)
+    st.plotly_chart(fig2, use_container_width=True)
 # ---------- Command bar ----------
 st.title("MY TERMINAL")
 cmd = st.text_input("Command (e.g. AAPL GP, TSLA NEWS, MSFT FA)", "AAPL GP").upper().split()
@@ -108,7 +169,10 @@ period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
 # ---------- Panels ----------
-if ticker == "MACRO" or function == "MACRO":
+if ticker == "UK" or function == "UK":
+    show_uk()
+
+elif ticker == "MACRO" or function == "MACRO":
     show_macro()
 
 elif function == "GP":
