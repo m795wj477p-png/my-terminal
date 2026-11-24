@@ -28,12 +28,93 @@ def get_quote(ticker):
     last, prev = df["Close"].iloc[-1], df["Close"].iloc[-2]
     return last, (last / prev - 1) * 100
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def get_news(ticker):
     try:
-        return yf.Ticker(ticker).news[:8]
-    except Exception:
-        return []
+        articles = yf.Ticker(ticker).get_news(count=15)
+        return articles, None
+    except Exception as error:
+        return [], str(error)
+@st.fragment(run_every="60s")
+def show_live_news(symbol):
+    st.subheader(f"{symbol} — Latest News")
+    st.caption(
+        "Checks for new headlines every 60 seconds while this page is active. "
+        "Publisher updates may be delayed."
+    )
+
+    if st.button("Refresh news now", key="refresh_news"):
+        get_news.clear()
+
+    articles, error = get_news(symbol)
+
+    st.caption(
+        "Last checked: "
+        + pd.Timestamp.now(tz="Europe/London").strftime(
+            "%d %b %Y, %H:%M:%S %Z"
+        )
+    )
+
+    if error:
+        st.warning("The news provider could not be reached.")
+        with st.expander("Show error details"):
+            st.code(error)
+        return
+
+    if not articles:
+        st.info(
+            "No headlines were returned for this ticker. "
+            "Try AAPL NEWS or MSFT NEWS. "
+            "The provider may also be temporarily unavailable."
+        )
+        return
+
+    for article in articles:
+        content = article.get("content") or article
+
+        title = content.get("title") or "Untitled article"
+
+        canonical = content.get("canonicalUrl") or {}
+        clickthrough = content.get("clickThroughUrl") or {}
+
+        url = (
+            canonical.get("url")
+            or clickthrough.get("url")
+            or article.get("link")
+        )
+
+        provider = content.get("provider") or {}
+        source = (
+            provider.get("displayName")
+            or article.get("publisher")
+            or "Unknown publisher"
+        )
+
+        published = content.get("pubDate")
+        published_text = "Publication time unavailable"
+
+        if published:
+            timestamp = pd.to_datetime(
+                published, utc=True, errors="coerce"
+            )
+            if pd.notna(timestamp):
+                published_text = timestamp.tz_convert(
+                    "Europe/London"
+                ).strftime("%d %b %Y, %H:%M %Z")
+
+        st.markdown("### " + title)
+        st.caption(f"{source} | {published_text}")
+
+        summary = content.get("summary")
+        if summary:
+            st.write(summary)
+
+        if isinstance(url, str) and url.startswith(
+            ("https://", "http://")
+        ):
+            st.link_button("Read original article", url)
+
+        st.divider()
 
 def add_indicators(df):
     df["SMA20"] = df["Close"].rolling(20).mean()
@@ -194,12 +275,7 @@ elif function == "GP":
     st.plotly_chart(fig, use_container_width=True)
 
 elif function == "NEWS":
-    st.subheader(f"{ticker} News")
-    for n in get_news(ticker):
-        content = n.get("content", n)
-        title = content.get("title", "No title")
-        url = (content.get("canonicalUrl") or {}).get("url") or n.get("link", "")
-        st.markdown(f"- [{title}]({url})")
+    show_live_news(ticker)
 
 elif function == "FA":
     st.subheader(f"{ticker} Fundamentals")
