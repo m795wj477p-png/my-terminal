@@ -112,7 +112,6 @@ if ticker == "MACRO" or function == "MACRO":
     show_macro()
 
 elif function == "GP":
-elif function == "GP":
     df = add_indicators(get_history(ticker, period, interval))
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.75, 0.25], vertical_spacing=0.03)
