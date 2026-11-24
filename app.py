@@ -44,7 +44,7 @@ def add_indicators(df):
     df["RSI"] = 100 - 100 / (1 + gain / loss)
     return df
     
-    MACRO_GROUPS = {
+MACRO_GROUPS = {
     "Indices": {"S&P 500": "^GSPC", "Nasdaq": "^IXIC", "FTSE 100": "^FTSE",
                 "DAX": "^GDAXI", "Nikkei 225": "^N225"},
     "FX": {"GBP/USD": "GBPUSD=X", "EUR/USD": "EURUSD=X",
