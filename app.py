@@ -43,6 +43,52 @@ def add_indicators(df):
     loss = -delta.clip(upper=0).rolling(14).mean()
     df["RSI"] = 100 - 100 / (1 + gain / loss)
     return df
+    
+    MACRO_GROUPS = {
+    "Indices": {"S&P 500": "^GSPC", "Nasdaq": "^IXIC", "FTSE 100": "^FTSE",
+                "DAX": "^GDAXI", "Nikkei 225": "^N225"},
+    "FX": {"GBP/USD": "GBPUSD=X", "EUR/USD": "EURUSD=X",
+           "USD/JPY": "USDJPY=X", "EUR/GBP": "EURGBP=X"},
+    "Commodities": {"Gold": "GC=F", "Brent Oil": "BZ=F",
+                    "WTI Oil": "CL=F", "Silver": "SI=F"},
+    "Rates & Crypto": {"US 10Y Yield": "^TNX", "VIX": "^VIX",
+                       "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD"},
+}
+
+@st.cache_data(ttl=300)
+def get_macro_quotes(symbols):
+    data = yf.download(list(symbols), period="5d", progress=False)["Close"]
+    out = {}
+    for s in symbols:
+        try:
+            col = data[s].dropna()
+            out[s] = (col.iloc[-1], (col.iloc[-1] / col.iloc[-2] - 1) * 100)
+        except Exception:
+            out[s] = (None, None)
+    return out
+
+def show_macro():
+    st.subheader("Macro Overview")
+    all_symbols = tuple(s for g in MACRO_GROUPS.values() for s in g.values())
+    quotes = get_macro_quotes(all_symbols)
+    for group, items in MACRO_GROUPS.items():
+        st.markdown(f"### {group}")
+        cols = st.columns(len(items))
+        for col, (name, sym) in zip(cols, items.items()):
+            price, chg = quotes[sym]
+            if price is None:
+                col.metric(name, "n/a")
+            else:
+                col.metric(name, f"{price:,.2f}", f"{chg:+.2f}%")
+
+    st.markdown("### Chart")
+    names = {n: s for g in MACRO_GROUPS.values() for n, s in g.items()}
+    choice = st.selectbox("Pick an asset", list(names))
+    hist = get_history(names[choice], "1y", "1d")
+    fig = go.Figure(go.Scatter(x=hist.index, y=hist["Close"],
+                               line=dict(color="#00ff66")))
+    fig.update_layout(template="plotly_dark", height=400, title=choice)
+    st.plotly_chart(fig, use_container_width=True)
 
 # ---------- Command bar ----------
 st.title("MY TERMINAL")
@@ -62,7 +108,11 @@ period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
 # ---------- Panels ----------
-if function == "GP":
+if ticker == "MACRO" or function == "MACRO":
+    show_macro()
+
+elif function == "GP":
+elif function == "GP":
     df = add_indicators(get_history(ticker, period, interval))
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.75, 0.25], vertical_spacing=0.03)
