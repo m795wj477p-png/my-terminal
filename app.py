@@ -606,6 +606,250 @@ def show_earnings_calendar():
         mime="text/csv",
         key="download_earnings",
     )
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_basic_financials(symbol):
+    api_key = st.secrets.get("FINNHUB_API_KEY", "")
+
+    if not api_key:
+        return None, "The FINNHUB_API_KEY secret is missing."
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/stock/metric",
+            params={
+                "symbol": symbol,
+                "metric": "all",
+            },
+            headers={"X-Finnhub-Token": api_key},
+            timeout=20,
+        )
+
+        if response.status_code in (401, 403):
+            return None, (
+                "Finnhub rejected the request. Check your API key "
+                "and whether your plan includes this endpoint."
+            )
+
+        if response.status_code == 429:
+            return None, (
+                "Finnhub's request limit was reached. "
+                "Please wait a minute and try again."
+            )
+
+        if response.status_code != 200:
+            return None, (
+                f"Finnhub returned status {response.status_code}. "
+                "Please try again later."
+            )
+
+        payload = response.json()
+
+        if not isinstance(payload, dict):
+            return None, "Finnhub returned an unexpected response."
+
+        if payload.get("error"):
+            return None, (
+                "Finnhub could not provide basic financials for "
+                f"{symbol}. Check the ticker and your plan's coverage."
+            )
+
+        metrics = payload.get("metric", {})
+
+        if not isinstance(metrics, dict) or not metrics:
+            return None, (
+                f"No basic financials were returned for {symbol}. "
+                "Try another ticker."
+            )
+
+        return metrics, None
+
+    except requests.exceptions.Timeout:
+        return None, "The request timed out. Please try again."
+
+    except (requests.exceptions.RequestException, ValueError):
+        return None, "Unable to load basic financials right now."
+
+
+def show_basic_financials():
+    st.subheader("Basic Financials")
+    st.caption(
+        "Key valuation, profitability, liquidity, growth and "
+        "52-week price metrics from Finnhub. "
+        "Figures may be unavailable for some companies."
+    )
+
+    ticker = st.text_input(
+        "Ticker",
+        value="AAPL",
+        key="basic_financials_ticker",
+    ).strip().upper()
+
+    if not ticker:
+        st.info("Enter a ticker to load basic financials.")
+        return
+
+    if st.button("Refresh financials", key="refresh_basic_financials"):
+        fetch_basic_financials.clear()
+
+    with st.spinner(f"Loading financials for {ticker}..."):
+        metrics, error = fetch_basic_financials(ticker)
+
+    if error:
+        st.warning(error)
+        return
+
+    def get_metric(name):
+        value = metrics.get(name)
+
+        if value in (None, ""):
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def format_percent(value):
+        if value is None:
+            return "—"
+        return f"{value:,.2f}%"
+
+    def format_ratio(value):
+        if value is None:
+            return "—"
+        return f"{value:,.2f}"
+
+    def format_large_number(value):
+        if value is None:
+            return "—"
+
+        magnitude = abs(value)
+
+        if magnitude >= 1_000_000_000:
+            return f"{value / 1_000_000_000:,.2f}B"
+
+        if magnitude >= 1_000_000:
+            return f"{value / 1_000_000:,.2f}M"
+
+        if magnitude >= 1_000:
+            return f"{value / 1_000:,.2f}K"
+
+        return f"{value:,.0f}"
+
+    valuation_col1, valuation_col2, valuation_col3 = st.columns(3)
+
+    valuation_col1.metric(
+        "P/E ratio",
+        format_ratio(get_metric("peBasicExcludingExtraItemsTTM")),
+    )
+
+    valuation_col2.metric(
+        "P/B ratio",
+        format_ratio(get_metric("pbAnnual")),
+    )
+
+    valuation_col3.metric(
+        "P/S ratio",
+        format_ratio(get_metric("psAnnual")),
+    )
+
+    profitability_col1, profitability_col2, profitability_col3 = st.columns(3)
+
+    profitability_col1.metric(
+        "Gross margin",
+        format_percent(get_metric("grossMarginTTM")),
+    )
+
+    profitability_col2.metric(
+        "Operating margin",
+        format_percent(get_metric("operatingMarginTTM")),
+    )
+
+    profitability_col3.metric(
+        "Net margin",
+        format_percent(get_metric("netProfitMarginTTM")),
+    )
+
+    liquidity_col1, liquidity_col2, liquidity_col3 = st.columns(3)
+
+    liquidity_col1.metric(
+        "Current ratio",
+        format_ratio(get_metric("currentRatioAnnual")),
+    )
+
+    liquidity_col2.metric(
+        "Quick ratio",
+        format_ratio(get_metric("quickRatioAnnual")),
+    )
+
+    liquidity_col3.metric(
+        "Debt/equity",
+        format_ratio(get_metric("totalDebt/totalEquityAnnual")),
+    )
+
+    growth_col1, growth_col2, growth_col3 = st.columns(3)
+
+    growth_col1.metric(
+        "Revenue growth",
+        format_percent(get_metric("revenueGrowthTTMYoy")),
+    )
+
+    growth_col2.metric(
+        "EPS growth",
+        format_percent(get_metric("epsGrowthTTMYoy")),
+    )
+
+    growth_col3.metric(
+        "Dividend yield",
+        format_percent(get_metric("dividendYieldIndicatedAnnual")),
+    )
+
+    price_col1, price_col2, price_col3 = st.columns(3)
+
+    price_col1.metric(
+        "52-week high",
+        format_ratio(get_metric("52WeekHigh")),
+    )
+
+    price_col2.metric(
+        "52-week low",
+        format_ratio(get_metric("52WeekLow")),
+    )
+
+    price_col3.metric(
+        "Beta",
+        format_ratio(get_metric("beta")),
+    )
+
+    volume_col1, volume_col2, volume_col3 = st.columns(3)
+
+    volume_col1.metric(
+        "10-day average volume",
+        format_large_number(
+            get_metric("10DayAverageTradingVolume")
+        ),
+    )
+
+    volume_col2.metric(
+        "3-month average volume",
+        format_large_number(
+            get_metric("3MonthAverageTradingVolume")
+        ),
+    )
+
+    volume_col3.metric(
+        "10-day average price",
+        format_ratio(
+            get_metric("10DayAverageTradingPrice")
+        ),
+    )
+
+    st.caption(
+        "— means Finnhub did not return that metric. "
+        "Some figures may be annual rather than trailing-twelve-month "
+        "values, depending on the metric. "
+        "This panel is for research, not investment advice."
+    )
 # ---------- Command bar ----------
 st.title("MY TERMINAL")
 show_market_headlines()
@@ -626,7 +870,10 @@ period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
 # ---------- Panels ----------
-if ticker == "EARNINGS" or function == "EARNINGS":
+if ticker == "FA" or function == "FA":
+    show_basic_financials()
+
+elif ticker == "EARNINGS" or function == "EARNINGS":
     show_earnings_calendar()
 
 elif ticker == "UK" or function == "UK":
