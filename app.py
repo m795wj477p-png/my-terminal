@@ -221,7 +221,7 @@ MACRO_GROUPS = {
                        "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD"},
 }
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=10, show_spinner=False)
 def get_macro_quotes(symbols):
     data = yf.download(list(symbols), period="5d", progress=False)["Close"]
     out = {}
