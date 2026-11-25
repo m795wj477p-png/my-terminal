@@ -235,35 +235,125 @@ def get_macro_quotes(symbols):
 
 @st.fragment(run_every="10s")
 def show_macro():
+    from html import escape
+
     st.subheader("Macro Overview")
-    all_symbols = tuple(s for g in MACRO_GROUPS.values() for s in g.values())
+
+    all_symbols = tuple(
+        s
+        for group in MACRO_GROUPS.values()
+        for s in group.values()
+    )
+
     quotes = get_macro_quotes(all_symbols)
+
     for group, items in MACRO_GROUPS.items():
         st.markdown(f"### {group}")
         cols = st.columns(len(items))
+
         for col, (name, sym) in zip(cols, items.items()):
-            price, chg = quotes[sym]
-            if price is None:
+            price, chg = quotes.get(sym, (None, None))
+
+            price = pd.to_numeric(price, errors="coerce")
+            chg = pd.to_numeric(chg, errors="coerce")
+
+            if pd.isna(price):
                 col.metric(name, "n/a")
+                continue
+
+            if pd.isna(chg):
+                colour = "#9ca3af"
+                change_text = "Change unavailable"
+            elif chg > 0:
+                colour = "#22c55e"
+                change_text = f"+{chg:,.2f}%"
+            elif chg < 0:
+                colour = "#ef4444"
+                change_text = f"{chg:,.2f}%"
             else:
-                col.metric(name, f"{price:,.2f}", f"{chg:+.2f}%")
-                checked_at = pd.Timestamp.now(
+                colour = "#9ca3af"
+                change_text = "0.00%"
+
+            safe_name = escape(str(name))
+
+            col.markdown(
+                f"""
+                <div style="
+                    border: 1px solid rgba(128,128,128,0.25);
+                    border-radius: 10px;
+                    padding: 14px;
+                    margin-bottom: 12px;
+                ">
+                    <div style="
+                        font-size: 14px;
+                        margin-bottom: 8px;
+                    ">{safe_name}</div>
+
+                    <div style="
+                        color: {colour};
+                        font-size: 30px;
+                        font-weight: 700;
+                        line-height: 1.2;
+                    ">{price:,.2f}</div>
+
+                    <div style="
+                        color: {colour};
+                        font-size: 16px;
+                        margin-top: 8px;
+                    ">{change_text}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    checked_at = pd.Timestamp.now(
         tz="Europe/London"
     ).strftime("%H:%M:%S")
 
     st.caption(
         f"Last checked: {checked_at} London time · "
-        "Refreshes every 10 seconds"
+        "Panel refreshes every 10 seconds. "
+        "Source data may be cached or delayed."
     )
 
     st.markdown("### Chart")
-    names = {n: s for g in MACRO_GROUPS.values() for n, s in g.items()}
-    choice = st.selectbox("Pick an asset", list(names))
+
+    names = {
+        name: symbol
+        for group in MACRO_GROUPS.values()
+        for name, symbol in group.items()
+    }
+
+    choice = st.selectbox(
+        "Pick an asset",
+        list(names),
+        key="macro_chart_asset",
+    )
+
     hist = get_history(names[choice], "1y", "1d")
-    fig = go.Figure(go.Scatter(x=hist.index, y=hist["Close"],
-                               line=dict(color="#00ff66")))
-    fig.update_layout(template="plotly_dark", height=400, title=choice)
-    st.plotly_chart(fig, use_container_width=True)
+
+    if hist is None or hist.empty or "Close" not in hist.columns:
+        st.info("Chart data is currently unavailable.")
+        return
+
+    fig = go.Figure(
+        go.Scatter(
+            x=hist.index,
+            y=hist["Close"],
+            line=dict(color="#00ff66"),
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=400,
+        title=choice,
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+    )
 
 UK_GROUPS = {
     "UK Indices": {"FTSE 100": "^FTSE", "FTSE 250": "^FTMC", "FTSE All-Share": "^FTAS"},
