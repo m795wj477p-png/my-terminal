@@ -1572,30 +1572,37 @@ def open_terminal_panel(panel):
 
 st.title("MY TERMINAL")
 
-toolbar_items = [
-    ("Sessions", "SESSIONS"),
+primary_items = [
     ("Briefing", "BRIEF"),
-    ("Chart", "GP"),
-    ("UK", "UK"),
     ("Macro", "MACRO"),
+    ("UK", "UK"),
+    ("Chart", "GP"),
+]
+
+secondary_items = [
+    ("Sessions", "SESSIONS"),
     ("Company News", "NEWS"),
     ("Earnings", "EARNINGS"),
     ("Financials", "FA"),
 ]
 
-toolbar_columns = st.columns(len(toolbar_items))
+def draw_toolbar(items, row_number):
+    columns = st.columns(len(items))
 
-for column, (label, panel) in zip(
-    toolbar_columns, toolbar_items
-):
-    with column:
-        st.button(
-            label,
-            key=f"terminal_nav_{panel}",
-            on_click=open_terminal_panel,
-            args=(panel,),
-            use_container_width=True,
-        )
+    for column, (label, panel) in zip(
+        columns, items
+    ):
+        with column:
+            st.button(
+                label,
+                key=f"terminal_nav_{panel}_{row_number}",
+                on_click=open_terminal_panel,
+                args=(panel,),
+                use_container_width=True,
+            )
+
+draw_toolbar(primary_items, 1)
+draw_toolbar(secondary_items, 2)
 
 command_text = st.text_input(
     "Command (e.g. AAPL GP, TSLA NEWS, MSFT FA, BRIEF)",
