@@ -1032,12 +1032,413 @@ def show_basic_financials():
         "values, depending on the metric. "
         "This panel is for research, not investment advice."
     )
+# ---------- Morning briefing ----------
+def show_morning_briefing():
+    from html import escape
+
+    st.subheader("Morning Briefing")
+
+    now = pd.Timestamp.now(tz="Europe/London")
+    today = now.date()
+    end_date = (now + pd.Timedelta(days=7)).date()
+
+    st.caption(
+        now.strftime("%A %d %B %Y · %H:%M:%S %Z")
+        + " · On-demand market briefing"
+    )
+
+    st.caption(
+        "A snapshot of available data—not an explanation of why "
+        "markets moved. Figures can refer to different trading "
+        "sessions and may be cached or delayed."
+    )
+
+    if st.button("Refresh briefing", key="refresh_briefing"):
+        get_macro_quotes.clear()
+        get_quote.clear()
+        fetch_market_headlines.clear()
+        fetch_earnings_calendar.clear()
+
+    def safe_number(value):
+        value = pd.to_numeric(value, errors="coerce")
+        return None if pd.isna(value) else float(value)
+
+    def draw_card(column, label, price, change):
+        price = safe_number(price)
+        change = safe_number(change)
+
+        if change is None or change == 0:
+            colour = "#9ca3af"
+        elif change > 0:
+            colour = "#22c55e"
+        else:
+            colour = "#ef4444"
+
+        price_text = "n/a" if price is None else f"{price:,.2f}"
+        change_text = (
+            "Change unavailable"
+            if change is None
+            else f"{change:+.2f}%"
+        )
+
+        column.html(
+            f"""
+            <div style="
+                border:1px solid rgba(128,128,128,0.3);
+                border-radius:10px;
+                padding:14px;
+                margin-bottom:12px;
+            ">
+                <div style="font-size:14px;margin-bottom:8px;">
+                    {escape(label)}
+                </div>
+                <div style="
+                    color:{colour};
+                    font-size:28px;
+                    font-weight:700;
+                ">{price_text}</div>
+                <div style="color:{colour};margin-top:6px;">
+                    {change_text}
+                </div>
+            </div>
+            """
+        )
+
+    # Market snapshot
+    st.markdown("### Market snapshot")
+
+    focus_assets = {
+        "Gold futures": "GC=F",
+        "Nasdaq-100 futures": "NQ=F",
+        "S&P 500": "^GSPC",
+        "FTSE 100": "^FTSE",
+        "GBP/USD": "GBPUSD=X",
+        "EUR/USD": "EURUSD=X",
+        "Brent futures": "BZ=F",
+        "VIX": "^VIX",
+    }
+
+    quotes = {}
+    snapshot_ok = True
+
+    try:
+        quotes = get_macro_quotes(tuple(focus_assets.values()))
+        if not isinstance(quotes, dict):
+            quotes = {}
+            snapshot_ok = False
+    except Exception:
+        snapshot_ok = False
+        st.warning("The market snapshot could not be loaded.")
+
+    asset_items = list(focus_assets.items())
+
+    for start in range(0, len(asset_items), 4):
+        columns = st.columns(4)
+
+        for column, (name, symbol) in zip(
+            columns, asset_items[start:start + 4]
+        ):
+            price, change = quotes.get(symbol, (None, None))
+            draw_card(column, name, price, change)
+
+    st.caption(
+        "Snapshot source: Yahoo Finance via your existing macro "
+        "helper. Changes compare the last two available daily "
+        "closes. Futures are not spot or broker CFD prices. "
+        "VIX is an index level, not a percentage price."
+    )
+
+    # Factual summary: no inferred causes or trading signals
+    available_moves = []
+
+    for name, symbol in focus_assets.items():
+        price, change = quotes.get(symbol, (None, None))
+        price = safe_number(price)
+        change = safe_number(change)
+
+        if price is not None and change is not None:
+            available_moves.append((name, change))
+
+    st.markdown("### At a glance")
+
+    if available_moves:
+        higher = sum(change > 0 for _, change in available_moves)
+        lower = sum(change < 0 for _, change in available_moves)
+        flat = sum(change == 0 for _, change in available_moves)
+
+        st.write(
+            f"Of {len(available_moves)} instruments with available "
+            f"change data: {higher} higher, {lower} lower and "
+            f"{flat} unchanged."
+        )
+
+        largest_name, largest_change = max(
+            available_moves,
+            key=lambda item: abs(item[1]),
+        )
+
+        st.write(
+            f"Largest absolute percentage move in this selected "
+            f"snapshot: {largest_name} ({largest_change:+.2f}%)."
+        )
+
+        st.caption(
+            "This compares a small, mixed set of instruments—not "
+            "overall market breadth or comparable investment returns."
+        )
+    else:
+        st.info("No market-change summary is available.")
+
+    # Watchlist
+    st.markdown("### Your watchlist")
+
+    default_watchlist = (
+        "GC=F\nNQ=F\nEURUSD=X\nGBPUSD=X\nBTC-USD"
+    )
+
+    watchlist_text = st.session_state.get(
+        "watchlist_tickers", default_watchlist
+    )
+
+    symbols = list(
+        dict.fromkeys(watchlist_text.upper().split())
+    )
+
+    watchlist_rows = []
+    watchlist_unavailable = 0
+
+    for symbol in symbols:
+        try:
+            price, change = get_quote(symbol)
+        except Exception:
+            price, change = None, None
+
+        price = safe_number(price)
+        change = safe_number(change)
+
+        if price is None:
+            watchlist_unavailable += 1
+
+        watchlist_rows.append({
+            "Ticker": symbol,
+            "Price": price,
+            "Change %": change,
+        })
+
+    if watchlist_rows:
+        st.dataframe(
+            pd.DataFrame(watchlist_rows),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+        if watchlist_unavailable:
+            st.caption(
+                f"{watchlist_unavailable} watchlist quote(s) "
+                "currently unavailable."
+            )
+    else:
+        st.info("Add tickers to your sidebar watchlist.")
+
+    st.caption(
+        "Plain US stock symbols use Finnhub; Yahoo-style index, "
+        "forex, futures, crypto and exchange symbols use Yahoo "
+        "Finance. A missing value does not mean zero."
+    )
+
+    # Headlines
+    st.markdown("### Latest market headlines")
+
+    try:
+        articles, news_error = fetch_market_headlines()
+    except Exception:
+        articles, news_error = [], "Market news is unavailable."
+
+    if news_error:
+        st.warning(news_error)
+    elif not articles:
+        st.info("No headlines were returned.")
+    else:
+        for article in articles:
+            st.markdown("#### " + article["headline"])
+
+            published = pd.to_datetime(
+                article.get("datetime"),
+                unit="s",
+                utc=True,
+                errors="coerce",
+            )
+
+            published_text = "Publication time unavailable"
+
+            if pd.notna(published):
+                published_text = published.tz_convert(
+                    "Europe/London"
+                ).strftime("%d %b %Y, %H:%M %Z")
+
+            source = article.get("source") or "Unknown publisher"
+            st.caption(f"{source} | {published_text}")
+
+            url = article.get("url") or ""
+
+            if isinstance(url, str) and url.startswith(
+                ("https://", "http://")
+            ):
+                st.link_button("Read original article", url)
+
+    # Earnings
+    st.markdown("### Earnings: today and the next seven days")
+
+    try:
+        events, earnings_error = fetch_earnings_calendar(
+            today.isoformat(),
+            end_date.isoformat(),
+            "",
+        )
+    except Exception:
+        events, earnings_error = [], "Earnings data is unavailable."
+
+    if earnings_error:
+        st.warning(earnings_error)
+    elif not events:
+        st.info(
+            "No earnings events were returned. This can reflect "
+            "coverage or access limits, not necessarily no releases."
+        )
+    else:
+        earnings = pd.DataFrame(events)
+
+        required = [
+            "date", "symbol", "hour",
+            "epsEstimate", "epsActual",
+        ]
+
+        for column in required:
+            if column not in earnings.columns:
+                earnings[column] = None
+
+        earnings["date"] = pd.to_datetime(
+            earnings["date"], errors="coerce"
+        )
+
+        earnings = earnings[
+            earnings["date"].notna()
+            & (earnings["date"].dt.date >= today)
+            & (earnings["date"].dt.date <= end_date)
+        ].copy()
+
+        earnings = earnings.sort_values(
+            ["date", "symbol"], na_position="last"
+        )
+
+        if earnings.empty:
+            st.info("No dated events matched the requested range.")
+        else:
+            today_count = int(
+                (earnings["date"].dt.date == today).sum()
+            )
+
+            st.caption(
+                f"{today_count} release(s) dated today; "
+                f"{len(earnings)} in the displayed date range."
+            )
+
+            timing_labels = {
+                "bmo": "Before market open",
+                "amc": "After market close",
+                "dmh": "During market hours",
+            }
+
+            def eps_text(value):
+                value = safe_number(value)
+                return "—" if value is None else f"{value:,.2f}"
+
+            display = pd.DataFrame({
+                "Date": earnings["date"].dt.strftime("%d %b %Y"),
+                "Ticker": earnings["symbol"],
+                "Reporting session": earnings["hour"].map(
+                    timing_labels
+                ).fillna("Not specified"),
+                "Estimated EPS": earnings["epsEstimate"].map(
+                    eps_text
+                ),
+                "Actual EPS": earnings["epsActual"].map(
+                    eps_text
+                ),
+            })
+
+            st.dataframe(
+                display,
+                hide_index=True,
+                use_container_width=True,
+            )
+
+            st.caption(
+                "Dates and figures are supplied by Finnhub. "
+                "Reporting sessions refer to the relevant market, "
+                "not London clock times. — means unavailable."
+            )
+
+    # Data-status information
+    with st.expander("Data status and refresh details"):
+        st.write(
+            "Market snapshot: "
+            + (
+                f"{len(available_moves)} instruments with usable "
+                "price-and-change data."
+                if snapshot_ok
+                else "Request unavailable."
+            )
+        )
+
+        st.write(
+            "Headlines: "
+            + (
+                "Unavailable."
+                if news_error
+                else f"{len(articles)} returned."
+            )
+        )
+
+        st.write(
+            "Earnings: "
+            + (
+                "Unavailable."
+                if earnings_error
+                else f"{len(events)} raw event(s) returned."
+            )
+        )
+
+        st.write(
+            "This briefing loads when opened or rerun. "
+            "It does not refresh automatically on a timer."
+        )
+
+        st.write(
+            "Existing caches: macro quotes up to 5 minutes, "
+            "watchlist quotes up to 30 seconds, headlines up to "
+            "60 seconds and earnings up to 15 minutes. "
+            "Refresh briefing clears those caches, but cannot "
+            "remove delays in the underlying sources."
+        )
+
+        st.write(
+            "Sidebar watchlist changes are picked up when this "
+            "briefing next reruns. It does not include an economic "
+            "calendar, price forecasts or trading recommendations."
+        )
+
+
 # ---------- Toolbar and command bar ----------
 if "terminal_command" not in st.session_state:
     st.session_state["terminal_command"] = "AAPL GP"
 
 if "terminal_last_ticker" not in st.session_state:
     st.session_state["terminal_last_ticker"] = "AAPL"
+
+RESERVED_COMMANDS = {
+    "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO", "BRIEF"
+}
 
 
 def open_terminal_panel(panel):
@@ -1048,16 +1449,12 @@ def open_terminal_panel(panel):
         .split()
     )
 
-    reserved_commands = {
-        "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO"
-    }
-
-    if parts and parts[0] not in reserved_commands:
+    if parts and parts[0] not in RESERVED_COMMANDS:
         st.session_state["terminal_last_ticker"] = parts[0]
 
     selected_ticker = st.session_state["terminal_last_ticker"]
 
-    if panel in {"UK", "MACRO", "EARNINGS"}:
+    if panel in {"UK", "MACRO", "EARNINGS", "BRIEF"}:
         st.session_state["terminal_command"] = panel
     else:
         st.session_state["terminal_command"] = (
@@ -1068,147 +1465,8 @@ def open_terminal_panel(panel):
 st.title("MY TERMINAL")
 
 toolbar_items = [
+    ("Briefing", "BRIEF"),
     ("Chart", "GP"),
     ("UK", "UK"),
     ("Macro", "MACRO"),
-    ("Company News", "NEWS"),
-    ("Earnings", "EARNINGS"),
-    ("Financials", "FA"),
-]
-
-toolbar_columns = st.columns(len(toolbar_items))
-
-for column, (label, panel) in zip(
-    toolbar_columns, toolbar_items
-):
-    with column:
-        st.button(
-            label,
-            key=f"terminal_nav_{panel}",
-            on_click=open_terminal_panel,
-            args=(panel,),
-            use_container_width=True,
-        )
-
-show_market_headlines()
-st.divider()
-
-command_text = st.text_input(
-    "Command (e.g. AAPL GP, TSLA NEWS, MSFT FA)",
-    key="terminal_command",
-)
-
-cmd = command_text.strip().upper().split()
-
-ticker = cmd[0] if cmd else "AAPL"
-function = cmd[1] if len(cmd) > 1 else "GP"
-
-reserved_commands = {
-    "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO"
-}
-
-if ticker not in reserved_commands:
-    st.session_state["terminal_last_ticker"] = ticker
-# ---------- Sidebar ----------
-@st.fragment(run_every="10s")
-def show_watchlist():
-    st.header("Watchlist")
-
-    watchlist = st.text_area(
-        "Tickers",
-        value=(
-            "GC=F\n"
-            "NQ=F\n"
-            "EURUSD=X\n"
-            "GBPUSD=X\n"
-            "BTC-USD"
-        ),
-        height=230,
-        key="watchlist_tickers",
-    ).upper().split()
-
-    for t in dict.fromkeys(watchlist):
-        try:
-            price, chg = get_quote(t)
-
-            if price is not None:
-                change_text = (
-                    f"{chg:+.2f}%"
-                    if chg is not None
-                    else None
-                )
-
-                st.metric(
-                    label=t,
-                    value=f"{price:,.2f}",
-                    delta=change_text,
-                    delta_color="normal",
-                )
-            else:
-                st.caption(f"{t}: price unavailable")
-
-        except Exception:
-            st.caption(f"{t}: unable to load price")
-
-    checked_at = pd.Timestamp.now(
-        tz="Europe/London"
-    ).strftime("%H:%M:%S")
-
-    st.caption(f"Last checked: {checked_at} London time")
-    st.caption(
-        "Checks every 10 seconds while this session is active. "
-        "US stocks: Finnhub. Yahoo-style index, forex, crypto "
-        "and exchange symbols: Yahoo Finance. "
-        "Prices may be delayed or unchanged."
-    )
-
-
-with st.sidebar:
-    show_watchlist()
-
-period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index=3)
-interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
-
-# ---------- Panels ----------
-if ticker == "FA" or function == "FA":
-    show_basic_financials()
-
-elif ticker == "EARNINGS" or function == "EARNINGS":
-    show_earnings_calendar()
-
-elif ticker == "UK" or function == "UK":
-    show_uk()
-
-elif ticker == "MACRO" or function == "MACRO":
-    show_macro()
-
-elif function == "GP":
-    df = add_indicators(get_history(ticker, period, interval))
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.75, 0.25], vertical_spacing=0.03)
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"],
-                                 low=df["Low"], close=df["Close"], name=ticker), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["SMA20"], name="SMA20",
-                             line=dict(color="cyan", width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["SMA50"], name="SMA50",
-                             line=dict(color="magenta", width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
-                             line=dict(color="orange")), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
-    fig.update_layout(template="plotly_dark", height=700,
-                      xaxis_rangeslider_visible=False, title=f"{ticker} Price Chart")
-    st.plotly_chart(fig, use_container_width=True)
-
-elif function == "NEWS":
-    show_live_news(ticker)
-
-elif function == "FA":
-    st.subheader(f"{ticker} Fundamentals")
-    info = yf.Ticker(ticker).info
-    keys = ["longName", "sector", "marketCap", "trailingPE", "forwardPE",
-            "dividendYield", "fiftyTwoWeekHigh", "fiftyTwoWeekLow"]
-    st.table(pd.DataFrame({"Metric": keys, "Value": [info.get(k, "n/a") for k in keys]}))
-
-else:
-    st.warning("Unknown function. Try GP, NEWS or FA.")
+    ("Company
