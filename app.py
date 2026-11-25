@@ -1012,7 +1012,7 @@ reserved_commands = {
 if ticker not in reserved_commands:
     st.session_state["terminal_last_ticker"] = ticker
 # ---------- Sidebar ----------
-@st.fragment(run_every="30s")
+@st.fragment(run_every="10s")
 def show_watchlist():
     st.header("Watchlist")
 
@@ -1057,7 +1057,7 @@ def show_watchlist():
 
     st.caption(f"Last checked: {checked_at} London time")
     st.caption(
-        "Checks every 30 seconds while this session is active. "
+        "Checks every 10 seconds while this session is active. "
         "US stocks: Finnhub. Yahoo-style index, forex, crypto "
         "and exchange symbols: Yahoo Finance. "
         "Prices may be delayed or unchanged."
