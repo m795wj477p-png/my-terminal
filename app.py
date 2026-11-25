@@ -1139,7 +1139,7 @@ def show_watchlist():
                     else None
                 )
 
-                 st.metric(
+                st.metric(
                     label=t,
                     value=f"{price:,.2f}",
                     delta=change_text,
