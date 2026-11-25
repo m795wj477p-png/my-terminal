@@ -1428,7 +1428,114 @@ def show_morning_briefing():
             "calendar, price forecasts or trading recommendations."
         )
 
+# ---------- Session clock ----------
+@st.fragment(run_every="10s")
+def show_session_clock():
+    from zoneinfo import ZoneInfo
 
+    london_tz = ZoneInfo("Europe/London")
+    now_london = pd.Timestamp.now(tz=london_tz)
+
+    st.subheader("Session Clock")
+    st.caption(
+        now_london.strftime("%A %d %B %Y · %H:%M:%S %Z")
+        + " · Updates every 10 seconds while this page is active"
+    )
+
+    sessions = [
+        {
+            "name": "London killzone",
+            "start_hour": 7,
+            "end_hour": 10,
+        },
+        {
+            "name": "New York killzone",
+            "start_hour": 13,
+            "end_hour": 16,
+        },
+    ]
+
+    active_sessions = []
+    upcoming_sessions = []
+
+    for session in sessions:
+        start = now_london.replace(
+            hour=session["start_hour"],
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        end = now_london.replace(
+            hour=session["end_hour"],
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        if start <= now_london < end:
+            active_sessions.append(
+                {
+                    "name": session["name"],
+                    "ends_at": end,
+                }
+            )
+        elif now_london < start:
+            upcoming_sessions.append(
+                {
+                    "name": session["name"],
+                    "starts_at": start,
+                }
+            )
+        else:
+            next_start = start + pd.Timedelta(days=1)
+
+            upcoming_sessions.append(
+                {
+                    "name": session["name"],
+                    "starts_at": next_start,
+                }
+            )
+
+    if active_sessions:
+        for session in active_sessions:
+            minutes_left = int(
+                (session["ends_at"] - now_london)
+                .total_seconds()
+                // 60
+            )
+
+            st.success(
+                f"{session['name']} is active. "
+                f"Ends in {minutes_left} minute(s)."
+            )
+    else:
+        st.info("No selected killzone is currently active.")
+
+    for session in upcoming_sessions:
+        minutes_until = int(
+            (session["starts_at"] - now_london)
+            .total_seconds()
+            // 60
+        )
+
+        hours, minutes = divmod(minutes_until, 60)
+
+        st.write(
+            f"Next {session['name']}: "
+            f"{session['starts_at'].strftime('%H:%M %Z')} "
+            f"(in {hours}h {minutes}m)"
+        )
+
+    broker_time = now_london + pd.Timedelta(hours=3)
+
+    st.caption(
+        "Broker server time: "
+        + broker_time.strftime("%H:%M:%S")
+        + " · Your broker server is 3 hours ahead of London. "
+        "Use London time for session logic."
+    )
+    
 # ---------- Toolbar and command bar ----------
 if "terminal_command" not in st.session_state:
     st.session_state["terminal_command"] = "AAPL GP"
@@ -1437,7 +1544,8 @@ if "terminal_last_ticker" not in st.session_state:
     st.session_state["terminal_last_ticker"] = "AAPL"
 
 RESERVED_COMMANDS = {
-    "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO", "BRIEF"
+    "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO",
+    "BRIEF", "SESSIONS"
 }
 
 
@@ -1454,7 +1562,7 @@ def open_terminal_panel(panel):
 
     selected_ticker = st.session_state["terminal_last_ticker"]
 
-    if panel in {"UK", "MACRO", "EARNINGS", "BRIEF"}:
+    if panel in {"UK", "MACRO", "EARNINGS", "BRIEF", "SESSIONS"}:
         st.session_state["terminal_command"] = panel
     else:
         st.session_state["terminal_command"] = (
@@ -1465,6 +1573,7 @@ def open_terminal_panel(panel):
 st.title("MY TERMINAL")
 
 toolbar_items = [
+    ("Sessions", "SESSIONS")
     ("Briefing", "BRIEF"),
     ("Chart", "GP"),
     ("UK", "UK"),
@@ -1579,6 +1688,12 @@ interval = st.sidebar.selectbox(
 
 
 # ---------- Panels ----------
+if ticker == "SESSIONS" or function == "SESSIONS":
+    show_session_clock()
+
+elif ticker == "BRIEF" or function == "BRIEF":
+    show_morning_briefing()
+    
 if ticker == "BRIEF" or function == "BRIEF":
     show_morning_briefing()
 
