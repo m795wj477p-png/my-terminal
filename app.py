@@ -1016,12 +1016,15 @@ if ticker not in reserved_commands:
 def show_watchlist():
     st.header("Watchlist")
 
-        watchlist = st.text_area(
+    watchlist = st.text_area(
         "Tickers",
         value=(
-            "NQ=F\n"
+            "AAPL\n"
+            "MSFT\n"
+            "TSLA\n"
             "GC=F\n"
-            "EURUSD=X\n"
+            "NQ=F\n"
+            "^GSPC\n"
             "GBPUSD=X\n"
             "BTC-USD"
         ),
@@ -1033,11 +1036,17 @@ def show_watchlist():
         try:
             price, chg = get_quote(t)
 
-            if price is not None and chg is not None:
+            if price is not None:
+                change_text = (
+                    f"{chg:+.2f}%"
+                    if chg is not None
+                    else None
+                )
+
                 st.metric(
                     t,
                     f"{price:,.2f}",
-                    f"{chg:+.2f}%",
+                    change_text,
                 )
             else:
                 st.caption(f"{t}: price unavailable")
@@ -1051,15 +1060,16 @@ def show_watchlist():
 
     st.caption(f"Last checked: {checked_at} London time")
     st.caption(
-    "Checks every 30 seconds while this session is active. "
-    "US stocks: Finnhub. Yahoo-style index, forex, crypto "
-    "and exchange symbols: Yahoo Finance. "
-    "Prices may be delayed or unchanged."
-)
+        "Checks every 30 seconds while this session is active. "
+        "US stocks: Finnhub. Yahoo-style index, forex, crypto "
+        "and exchange symbols: Yahoo Finance. "
+        "Prices may be delayed or unchanged."
+    )
 
 
 with st.sidebar:
     show_watchlist()
+
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index=3)
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
