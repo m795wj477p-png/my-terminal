@@ -1016,9 +1016,16 @@ if ticker not in reserved_commands:
 def show_watchlist():
     st.header("Watchlist")
 
-    watchlist = st.text_area(
+        watchlist = st.text_area(
         "Tickers",
-        value="AAPL\nMSFT\nTSLA\n^GSPC\nGBPUSD=X\nBTC-USD",
+        value=(
+            "NQ=F\n"
+            "GC=F\n"
+            "EURUSD=X\n"
+            "GBPUSD=X\n"
+            "BTC-USD"
+        ),
+        height=230,
         key="watchlist_tickers",
     ).upper().split()
 
