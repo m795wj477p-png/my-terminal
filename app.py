@@ -233,6 +233,7 @@ def get_macro_quotes(symbols):
             out[s] = (None, None)
     return out
 
+@st.fragment(run_every="10s")
 def show_macro():
     st.subheader("Macro Overview")
     all_symbols = tuple(s for g in MACRO_GROUPS.values() for s in g.values())
@@ -246,6 +247,14 @@ def show_macro():
                 col.metric(name, "n/a")
             else:
                 col.metric(name, f"{price:,.2f}", f"{chg:+.2f}%")
+                    checked_at = pd.Timestamp.now(
+        tz="Europe/London"
+    ).strftime("%H:%M:%S")
+
+    st.caption(
+        f"Last checked: {checked_at} London time · "
+        "Refreshes every 10 seconds"
+    )
 
     st.markdown("### Chart")
     names = {n: s for g in MACRO_GROUPS.values() for n, s in g.items()}
