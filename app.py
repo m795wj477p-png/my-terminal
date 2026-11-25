@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -232,8 +233,137 @@ def show_uk():
     fig2 = go.Figure(go.Scatter(x=hist.index, y=hist["Close"], line=dict(color="#ffb000")))
     fig2.update_layout(template="plotly_dark", height=400, title=choice)
     st.plotly_chart(fig2, use_container_width=True)
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_market_headlines():
+    api_key = st.secrets.get("FINNHUB_API_KEY", "")
+
+    if not api_key:
+        return [], "The FINNHUB_API_KEY secret is missing."
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/news",
+            params={"category": "general"},
+            headers={"X-Finnhub-Token": api_key},
+            timeout=15,
+        )
+
+        if response.status_code in (401, 403):
+            return [], (
+                "Finnhub rejected the request. Check your API key "
+                "and whether your plan includes this endpoint."
+            )
+
+        if response.status_code == 429:
+            return [], (
+                "Finnhub's request limit was reached. "
+                "Wait a minute before trying again."
+            )
+
+        if response.status_code != 200:
+            return [], (
+                f"Finnhub returned status {response.status_code}. "
+                "Please try again later."
+            )
+
+        articles = response.json()
+
+        if not isinstance(articles, list):
+            return [], "Finnhub returned an unexpected response."
+
+        articles = [
+            article
+            for article in articles
+            if isinstance(article, dict) and article.get("headline")
+        ]
+
+        articles.sort(
+            key=lambda article: article.get("datetime") or 0,
+            reverse=True,
+        )
+
+        # Remove duplicate headlines.
+        unique_articles = []
+        seen = set()
+
+        for article in articles:
+            headline = article["headline"].strip().lower()
+
+            if headline not in seen:
+                seen.add(headline)
+                unique_articles.append(article)
+
+        return unique_articles[:6], None
+
+    except requests.exceptions.Timeout:
+        return [], "The news request timed out. Please try again."
+
+    except (requests.exceptions.RequestException, ValueError):
+        return [], "Unable to load market news at the moment."
+
+
+@st.fragment(run_every="60s")
+def show_market_headlines():
+    st.subheader("Latest Market News")
+    st.caption(
+        "Recent market headlines from Finnhub. "
+        "Checks for updates every 60 seconds while this page is active."
+    )
+
+    articles, error = fetch_market_headlines()
+
+    if error:
+        st.warning(error)
+        return
+
+    if not articles:
+        st.info("No market headlines are available right now.")
+        return
+
+    checked_at = pd.Timestamp.now(
+        tz="Europe/London"
+    ).strftime("%d %b %Y, %H:%M:%S %Z")
+
+    st.caption(f"Last checked: {checked_at}")
+
+    # Six stories displayed in two rows of three.
+    for start in range(0, len(articles), 3):
+        columns = st.columns(3)
+
+        for column, article in zip(
+            columns, articles[start:start + 3]
+        ):
+            with column:
+                st.markdown("#### " + article["headline"])
+
+                source = article.get("source") or "Unknown publisher"
+
+                published = pd.to_datetime(
+                    article.get("datetime"),
+                    unit="s",
+                    utc=True,
+                    errors="coerce",
+                )
+
+                if pd.notna(published):
+                    published_text = published.tz_convert(
+                        "Europe/London"
+                    ).strftime("%d %b, %H:%M %Z")
+
+                    st.caption(f"{source} | {published_text}")
+                else:
+                    st.caption(source)
+
+                url = article.get("url") or ""
+
+                if url.startswith(("https://", "http://")):
+                    st.link_button("Read article", url)
+
+        st.divider()
 # ---------- Command bar ----------
 st.title("MY TERMINAL")
+show_market_headlines()
+st.divider()
 cmd = st.text_input("Command (e.g. AAPL GP, TSLA NEWS, MSFT FA)", "AAPL GP").upper().split()
 ticker = cmd[0] if cmd else "AAPL"
 function = cmd[1] if len(cmd) > 1 else "GP"
