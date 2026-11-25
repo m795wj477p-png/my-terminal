@@ -1049,10 +1049,11 @@ def show_watchlist():
                     else None
                 )
 
-                st.metric(
-                    t,
-                    f"{price:,.2f}",
-                    change_text,
+                 st.metric(
+                    label=t,
+                    value=f"{price:,.2f}",
+                    delta=change_text,
+                    delta_color="normal",
                 )
             else:
                 st.caption(f"{t}: price unavailable")
