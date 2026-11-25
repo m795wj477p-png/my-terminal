@@ -1469,4 +1469,228 @@ toolbar_items = [
     ("Chart", "GP"),
     ("UK", "UK"),
     ("Macro", "MACRO"),
-    ("Company
+    ("Company News", "NEWS"),
+    ("Earnings", "EARNINGS"),
+    ("Financials", "FA"),
+]
+
+toolbar_columns = st.columns(len(toolbar_items))
+
+for column, (label, panel) in zip(
+    toolbar_columns, toolbar_items
+):
+    with column:
+        st.button(
+            label,
+            key=f"terminal_nav_{panel}",
+            on_click=open_terminal_panel,
+            args=(panel,),
+            use_container_width=True,
+        )
+
+command_text = st.text_input(
+    "Command (e.g. AAPL GP, TSLA NEWS, MSFT FA, BRIEF)",
+    key="terminal_command",
+)
+
+cmd = command_text.strip().upper().split()
+
+ticker = cmd[0] if cmd else "AAPL"
+function = cmd[1] if len(cmd) > 1 else "GP"
+
+if ticker not in RESERVED_COMMANDS:
+    st.session_state["terminal_last_ticker"] = ticker
+
+# The briefing includes headlines, so avoid displaying them twice.
+if ticker != "BRIEF" and function != "BRIEF":
+    show_market_headlines()
+
+st.divider()
+
+
+# ---------- Sidebar ----------
+@st.fragment(run_every="10s")
+def show_watchlist():
+    st.header("Watchlist")
+
+    watchlist = st.text_area(
+        "Tickers",
+        value=(
+            "GC=F\n"
+            "NQ=F\n"
+            "EURUSD=X\n"
+            "GBPUSD=X\n"
+            "BTC-USD"
+        ),
+        height=230,
+        key="watchlist_tickers",
+    ).upper().split()
+
+    for t in dict.fromkeys(watchlist):
+        try:
+            price, chg = get_quote(t)
+
+            if price is not None:
+                change_text = (
+                    f"{chg:+.2f}%"
+                    if chg is not None
+                    else None
+                )
+
+                st.metric(
+                    label=t,
+                    value=f"{price:,.2f}",
+                    delta=change_text,
+                    delta_color="normal",
+                )
+            else:
+                st.caption(f"{t}: price unavailable")
+
+        except Exception:
+            st.caption(f"{t}: unable to load price")
+
+    checked_at = pd.Timestamp.now(
+        tz="Europe/London"
+    ).strftime("%H:%M:%S")
+
+    st.caption(f"Last checked: {checked_at} London time")
+    st.caption(
+        "Checks every 10 seconds while this session is active. "
+        "US stocks: Finnhub. Yahoo-style index, forex, crypto "
+        "and exchange symbols: Yahoo Finance. "
+        "Prices may be cached, delayed or unchanged."
+    )
+
+
+with st.sidebar:
+    show_watchlist()
+
+period = st.sidebar.selectbox(
+    "Period",
+    ["1mo", "3mo", "6mo", "1y", "5y"],
+    index=3,
+)
+
+interval = st.sidebar.selectbox(
+    "Interval",
+    ["1d", "1wk", "1h"],
+    index=0,
+)
+
+
+# ---------- Panels ----------
+if ticker == "BRIEF" or function == "BRIEF":
+    show_morning_briefing()
+
+elif ticker == "FA" or function == "FA":
+    show_basic_financials()
+
+elif ticker == "EARNINGS" or function == "EARNINGS":
+    show_earnings_calendar()
+
+elif ticker == "UK" or function == "UK":
+    show_uk()
+
+elif ticker == "MACRO" or function == "MACRO":
+    show_macro()
+
+elif function == "GP":
+    df = get_history(ticker, period, interval)
+
+    if df is None or df.empty:
+        st.warning("No chart data was returned for this ticker.")
+    else:
+        df = add_indicators(df.copy())
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            row_heights=[0.75, 0.25],
+            vertical_spacing=0.03,
+        )
+
+        fig.add_trace(
+            go.Candlestick(
+                x=df.index,
+                open=df["Open"],
+                high=df["High"],
+                low=df["Low"],
+                close=df["Close"],
+                name=ticker,
+            ),
+            row=1,
+            col=1,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["SMA20"],
+                name="SMA20",
+                line=dict(color="cyan", width=1),
+            ),
+            row=1,
+            col=1,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["SMA50"],
+                name="SMA50",
+                line=dict(color="magenta", width=1),
+            ),
+            row=1,
+            col=1,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["RSI"],
+                name="RSI",
+                line=dict(color="orange"),
+            ),
+            row=2,
+            col=1,
+        )
+
+        fig.add_hline(
+            y=70,
+            line_dash="dot",
+            line_color="red",
+            row=2,
+            col=1,
+        )
+
+        fig.add_hline(
+            y=30,
+            line_dash="dot",
+            line_color="green",
+            row=2,
+            col=1,
+        )
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=700,
+            xaxis_rangeslider_visible=False,
+            title=f"{ticker} Price Chart",
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+        )
+
+elif function == "NEWS":
+    show_live_news(ticker)
+
+else:
+    st.warning(
+        "Unknown function. Try GP, NEWS, FA, EARNINGS, "
+        "UK, MACRO or BRIEF."
+    )
+
+     
