@@ -276,7 +276,7 @@ def show_macro():
 
             safe_name = escape(str(name))
 
-            col.markdown(
+            col.html(
                 f"""
                 <div style="
                     border: 1px solid rgba(128,128,128,0.25);
@@ -302,8 +302,7 @@ def show_macro():
                         margin-top: 8px;
                     ">{change_text}</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                               """
             )
 
     checked_at = pd.Timestamp.now(
