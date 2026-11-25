@@ -850,14 +850,83 @@ def show_basic_financials():
         "values, depending on the metric. "
         "This panel is for research, not investment advice."
     )
-# ---------- Command bar ----------
+# ---------- Toolbar and command bar ----------
+if "terminal_command" not in st.session_state:
+    st.session_state["terminal_command"] = "AAPL GP"
+
+if "terminal_last_ticker" not in st.session_state:
+    st.session_state["terminal_last_ticker"] = "AAPL"
+
+
+def open_terminal_panel(panel):
+    parts = (
+        st.session_state["terminal_command"]
+        .strip()
+        .upper()
+        .split()
+    )
+
+    reserved_commands = {
+        "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO"
+    }
+
+    if parts and parts[0] not in reserved_commands:
+        st.session_state["terminal_last_ticker"] = parts[0]
+
+    selected_ticker = st.session_state["terminal_last_ticker"]
+
+    if panel in {"UK", "MACRO", "EARNINGS"}:
+        st.session_state["terminal_command"] = panel
+    else:
+        st.session_state["terminal_command"] = (
+            f"{selected_ticker} {panel}"
+        )
+
+
 st.title("MY TERMINAL")
+
+toolbar_items = [
+    ("Chart", "GP"),
+    ("UK", "UK"),
+    ("Macro", "MACRO"),
+    ("Company News", "NEWS"),
+    ("Earnings", "EARNINGS"),
+    ("Financials", "FA"),
+]
+
+toolbar_columns = st.columns(len(toolbar_items))
+
+for column, (label, panel) in zip(
+    toolbar_columns, toolbar_items
+):
+    with column:
+        st.button(
+            label,
+            key=f"terminal_nav_{panel}",
+            on_click=open_terminal_panel,
+            args=(panel,),
+            use_container_width=True,
+        )
+
 show_market_headlines()
 st.divider()
-cmd = st.text_input("Command (e.g. AAPL GP, TSLA NEWS, MSFT FA)", "AAPL GP").upper().split()
+
+command_text = st.text_input(
+    "Command (e.g. AAPL GP, TSLA NEWS, MSFT FA)",
+    key="terminal_command",
+)
+
+cmd = command_text.strip().upper().split()
+
 ticker = cmd[0] if cmd else "AAPL"
 function = cmd[1] if len(cmd) > 1 else "GP"
 
+reserved_commands = {
+    "GP", "NEWS", "FA", "EARNINGS", "UK", "MACRO"
+}
+
+if ticker not in reserved_commands:
+    st.session_state["terminal_last_ticker"] = ticker
 # ---------- Sidebar ----------
 st.sidebar.header("Watchlist")
 watchlist = st.sidebar.text_area("Tickers", "AAPL\nMSFT\nTSLA\n^GSPC\nGBPUSD=X\nBTC-USD").split()
