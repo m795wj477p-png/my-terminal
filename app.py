@@ -360,6 +360,252 @@ def show_market_headlines():
                     st.link_button("Read article", url)
 
         st.divider()
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_earnings_calendar(start_date, end_date, symbol):
+    api_key = st.secrets.get("FINNHUB_API_KEY", "")
+
+    if not api_key:
+        return [], "The FINNHUB_API_KEY secret is missing."
+
+    params = {
+        "from": start_date,
+        "to": end_date,
+    }
+
+    if symbol:
+        params["symbol"] = symbol
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/calendar/earnings",
+            params=params,
+            headers={"X-Finnhub-Token": api_key},
+            timeout=20,
+        )
+
+        if response.status_code in (401, 403):
+            return [], (
+                "Finnhub rejected the request. Check your API key "
+                "and whether your plan includes this endpoint."
+            )
+
+        if response.status_code == 429:
+            return [], (
+                "Finnhub's request limit was reached. "
+                "Please wait a minute and try again."
+            )
+
+        if response.status_code != 200:
+            return [], (
+                f"Finnhub returned status {response.status_code}. "
+                "Please try again later."
+            )
+
+        payload = response.json()
+
+        if not isinstance(payload, dict):
+            return [], "Finnhub returned an unexpected response."
+
+        if payload.get("error"):
+            return [], (
+                "Finnhub could not provide this calendar. "
+                "Check your plan's access and selected date range."
+            )
+
+        events = payload.get("earningsCalendar", [])
+
+        if not isinstance(events, list):
+            return [], "Finnhub returned an unexpected calendar format."
+
+        return [
+            event for event in events if isinstance(event, dict)
+        ], None
+
+    except requests.exceptions.Timeout:
+        return [], "The request timed out. Please try again."
+
+    except (requests.exceptions.RequestException, ValueError):
+        return [], "Unable to load the earnings calendar right now."
+
+
+def show_earnings_calendar():
+    st.subheader("Earnings Calendar")
+    st.caption(
+        "Upcoming and recent company earnings from Finnhub. "
+        "Dates and estimates may change."
+    )
+
+    today = pd.Timestamp.now(tz="Europe/London").date()
+    next_week = (
+        pd.Timestamp(today) + pd.Timedelta(days=7)
+    ).date()
+
+    date_col1, date_col2, symbol_col = st.columns(3)
+
+    with date_col1:
+        start_date = st.date_input(
+            "From",
+            value=today,
+            key="earnings_start",
+        )
+
+    with date_col2:
+        end_date = st.date_input(
+            "To",
+            value=next_week,
+            key="earnings_end",
+        )
+
+    with symbol_col:
+        symbol = st.text_input(
+            "Ticker filter (optional)",
+            placeholder="Example: AAPL",
+            key="earnings_symbol",
+        ).strip().upper()
+
+    if end_date < start_date:
+        st.warning("The end date must be on or after the start date.")
+        return
+
+    if (end_date - start_date).days > 31:
+        st.warning("Please select a range of 31 days or less.")
+        return
+
+    if st.button("Refresh calendar", key="refresh_earnings"):
+        fetch_earnings_calendar.clear()
+
+    with st.spinner("Loading earnings calendar..."):
+        events, error = fetch_earnings_calendar(
+            start_date.isoformat(),
+            end_date.isoformat(),
+            symbol,
+        )
+
+    if error:
+        st.warning(error)
+        return
+
+    if not events:
+        st.info(
+            "No earnings releases were returned for this selection. "
+            "Try another date range or clear the ticker filter. "
+            "Coverage may also depend on your Finnhub plan."
+        )
+        return
+
+    df = pd.DataFrame(events)
+
+    required_columns = [
+        "date",
+        "symbol",
+        "hour",
+        "epsEstimate",
+        "epsActual",
+        "revenueEstimate",
+        "revenueActual",
+    ]
+
+    for column in required_columns:
+        if column not in df.columns:
+            df[column] = None
+
+    numeric_columns = [
+        "epsEstimate",
+        "epsActual",
+        "revenueEstimate",
+        "revenueActual",
+    ]
+
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(
+            df[column], errors="coerce"
+        )
+
+    df["date"] = pd.to_datetime(
+        df["date"], errors="coerce"
+    )
+
+    df = df.sort_values(
+        ["date", "symbol"], na_position="last"
+    )
+
+    timing_labels = {
+        "bmo": "Before market open",
+        "amc": "After market close",
+        "dmh": "During market hours",
+    }
+
+    df["Timing"] = df["hour"].map(
+        timing_labels
+    ).fillna("Not specified")
+
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+    metric_col1.metric("Scheduled releases", len(df))
+    metric_col2.metric(
+        "Before market open",
+        int((df["hour"] == "bmo").sum()),
+    )
+    metric_col3.metric(
+        "After market close",
+        int((df["hour"] == "amc").sum()),
+    )
+
+    def format_eps(value):
+        if pd.isna(value):
+            return "—"
+        return f"{value:,.2f}"
+
+    def format_revenue(value):
+        if pd.isna(value):
+            return "—"
+
+        magnitude = abs(value)
+
+        if magnitude >= 1_000_000_000:
+            return f"{value / 1_000_000_000:,.2f}B"
+
+        if magnitude >= 1_000_000:
+            return f"{value / 1_000_000:,.2f}M"
+
+        return f"{value:,.0f}"
+
+    display = pd.DataFrame({
+        "Date": df["date"].dt.strftime("%d %b %Y"),
+        "Ticker": df["symbol"],
+        "Reporting time": df["Timing"],
+        "Estimated EPS": df["epsEstimate"].map(format_eps),
+        "Actual EPS": df["epsActual"].map(format_eps),
+        "Estimated revenue": df["revenueEstimate"].map(
+            format_revenue
+        ),
+        "Actual revenue": df["revenueActual"].map(
+            format_revenue
+        ),
+    })
+
+    st.dataframe(
+        display,
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    st.caption(
+        "— means no figure was supplied. "
+        "M = million; B = billion. "
+        "Figures are displayed as supplied, without currency conversion. "
+        "The response does not identify currency in this table."
+    )
+
+    st.download_button(
+        "Download calendar as CSV",
+        data=df[
+            required_columns
+        ].to_csv(index=False).encode("utf-8"),
+        file_name="earnings_calendar.csv",
+        mime="text/csv",
+        key="download_earnings",
+    )
 # ---------- Command bar ----------
 st.title("MY TERMINAL")
 show_market_headlines()
@@ -380,7 +626,10 @@ period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
 # ---------- Panels ----------
-if ticker == "UK" or function == "UK":
+if ticker == "EARNINGS" or function == "EARNINGS":
+    show_earnings_calendar()
+
+elif ticker == "UK" or function == "UK":
     show_uk()
 
 elif ticker == "MACRO" or function == "MACRO":
