@@ -21,13 +21,97 @@ def get_history(ticker, period, interval):
     df = yf.Ticker(ticker).history(period=period, interval=interval)
     return df.dropna()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30, show_spinner=False)
 def get_quote(ticker):
-    df = yf.Ticker(ticker).history(period="5d")
-    if len(df) < 2:
+    ticker = ticker.strip().upper()
+
+    # Keep Yahoo-style index, forex, crypto and exchange symbols
+    # on the existing Yahoo Finance route.
+    use_yahoo = (
+        ticker.startswith("^")
+        or "=" in ticker
+        or "-" in ticker
+        or "." in ticker
+    )
+
+    if use_yahoo:
+        try:
+            df = yf.Ticker(ticker).history(period="5d")
+
+            if df.empty or "Close" not in df.columns:
+                return None, None
+
+            closes = df["Close"].dropna()
+
+            if len(closes) < 2:
+                return None, None
+
+            last = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
+
+            if prev == 0:
+                return last, None
+
+            return last, (last / prev - 1) * 100
+
+        except Exception:
+            return None, None
+
+    # Plain US stock symbols use Finnhub.
+    api_key = st.secrets.get("FINNHUB_API_KEY", "")
+
+    if not api_key:
         return None, None
-    last, prev = df["Close"].iloc[-1], df["Close"].iloc[-2]
-    return last, (last / prev - 1) * 100
+
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/quote",
+            params={"symbol": ticker},
+            headers={"X-Finnhub-Token": api_key},
+            timeout=10,
+        )
+
+        if response.status_code != 200:
+            return None, None
+
+        quote = response.json()
+
+        if not isinstance(quote, dict) or quote.get("error"):
+            return None, None
+
+        price = quote.get("c")
+        change_percent = quote.get("dp")
+        previous_close = quote.get("pc")
+
+        if price is None:
+            return None, None
+
+        price = float(price)
+
+        if pd.isna(price) or price <= 0:
+            return None, None
+
+        if change_percent is not None:
+            change_percent = float(change_percent)
+        elif previous_close is not None and float(previous_close) > 0:
+            previous_close = float(previous_close)
+            change_percent = (
+                (price / previous_close) - 1
+            ) * 100
+        else:
+            return price, None
+
+        if pd.isna(change_percent):
+            return price, None
+
+        return price, change_percent
+
+    except (
+        requests.exceptions.RequestException,
+        TypeError,
+        ValueError,
+    ):
+        return None, None
 
 @st.cache_data(ttl=60)
 def get_news(ticker):
@@ -928,13 +1012,47 @@ reserved_commands = {
 if ticker not in reserved_commands:
     st.session_state["terminal_last_ticker"] = ticker
 # ---------- Sidebar ----------
-st.sidebar.header("Watchlist")
-watchlist = st.sidebar.text_area("Tickers", "AAPL\nMSFT\nTSLA\n^GSPC\nGBPUSD=X\nBTC-USD").split()
-for t in watchlist:
-    price, chg = get_quote(t)
-    if price is not None:
-        st.sidebar.metric(t, f"{price:,.2f}", f"{chg:+.2f}%")
+@st.fragment(run_every="30s")
+def show_watchlist():
+    st.header("Watchlist")
 
+    watchlist = st.text_area(
+        "Tickers",
+        value="AAPL\nMSFT\nTSLA\n^GSPC\nGBPUSD=X\nBTC-USD",
+        key="watchlist_tickers",
+    ).upper().split()
+
+    for t in dict.fromkeys(watchlist):
+        try:
+            price, chg = get_quote(t)
+
+            if price is not None and chg is not None:
+                st.metric(
+                    t,
+                    f"{price:,.2f}",
+                    f"{chg:+.2f}%",
+                )
+            else:
+                st.caption(f"{t}: price unavailable")
+
+        except Exception:
+            st.caption(f"{t}: unable to load price")
+
+    checked_at = pd.Timestamp.now(
+        tz="Europe/London"
+    ).strftime("%H:%M:%S")
+
+    st.caption(f"Last checked: {checked_at} London time")
+    st.caption(
+    "Checks every 30 seconds while this session is active. "
+    "US stocks: Finnhub. Yahoo-style index, forex, crypto "
+    "and exchange symbols: Yahoo Finance. "
+    "Prices may be delayed or unchanged."
+)
+
+
+with st.sidebar:
+    show_watchlist()
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "5y"], index=3)
 interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1h"], index=0)
 
