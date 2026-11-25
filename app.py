@@ -1573,7 +1573,7 @@ def open_terminal_panel(panel):
 st.title("MY TERMINAL")
 
 toolbar_items = [
-    ("Sessions", "SESSIONS")
+    ("Sessions", "SESSIONS"),
     ("Briefing", "BRIEF"),
     ("Chart", "GP"),
     ("UK", "UK"),
