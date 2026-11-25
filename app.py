@@ -1019,12 +1019,9 @@ def show_watchlist():
     watchlist = st.text_area(
         "Tickers",
         value=(
-            "AAPL\n"
-            "MSFT\n"
-            "TSLA\n"
             "GC=F\n"
             "NQ=F\n"
-            "^GSPC\n"
+            "EURUSD=X\n"
             "GBPUSD=X\n"
             "BTC-USD"
         ),
