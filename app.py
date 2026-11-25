@@ -247,7 +247,7 @@ def show_macro():
                 col.metric(name, "n/a")
             else:
                 col.metric(name, f"{price:,.2f}", f"{chg:+.2f}%")
-                    checked_at = pd.Timestamp.now(
+                checked_at = pd.Timestamp.now(
         tz="Europe/London"
     ).strftime("%H:%M:%S")
 
