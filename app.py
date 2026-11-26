@@ -1592,7 +1592,7 @@ def show_top_clock():
         """,
         unsafe_allow_html=True,
     )
-st.title("MY TERMINAL")
+st.title("Tom's TERMINAL")
 show_top_clock()
 
 primary_items = [
