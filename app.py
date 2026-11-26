@@ -1695,7 +1695,7 @@ secondary_items = [
     ("Company News", "NEWS"),
     ("Earnings", "EARNINGS"),
     ("Financials", "FA"),
-    ("Curve"),
+    ("Curve", "CURVE"),
 ]
 
 def draw_toolbar(items, row_number):
@@ -1820,6 +1820,9 @@ def show_selected_panel():
 
     elif ticker == "MACRO" or function == "MACRO":
         show_macro()
+
+    elif ticker == "CURVE" or function == "CURVE":
+        render_curve_panel()
 
     elif function == "GP":
         df = get_history(ticker, period, interval)
