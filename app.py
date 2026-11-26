@@ -15,6 +15,94 @@ h1,h2,h3,label,p,span {color:#ffb000 !important; font-family:monospace;}
 </style>
 """, unsafe_allow_html=True)
 
+FRED_SERIES = {
+    "1M": ("DGS1MO", 1/12), "3M": ("DGS3MO", 0.25), "6M": ("DGS6MO", 0.5),
+    "1Y": ("DGS1", 1), "2Y": ("DGS2", 2), "3Y": ("DGS3", 3),
+    "5Y": ("DGS5", 5), "7Y": ("DGS7", 7), "10Y": ("DGS10", 10),
+    "20Y": ("DGS20", 20), "30Y": ("DGS30", 30),
+}
+
+@st.cache_data(ttl=3600)
+def load_curve_data(days=120):
+    key = st.secrets["FRED_API_KEY"]
+    start = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    frames = {}
+    for label, (sid, _) in FRED_SERIES.items():
+        r = requests.get(
+            "https://api.stlouisfed.org/fred/series/observations",
+            params={"series_id": sid, "api_key": key, "file_type": "json",
+                    "observation_start": start},
+            timeout=15,
+        )
+        r.raise_for_status()
+        obs = pd.DataFrame(r.json()["observations"])
+        obs["value"] = pd.to_numeric(obs["value"], errors="coerce")
+        frames[label] = obs.set_index("date")["value"]
+    df = pd.DataFrame(frames).dropna(how="all")
+    df.index = pd.to_datetime(df.index)
+    return df.sort_index()
+
+def render_curve_panel():
+    st.subheader("US TREASURY YIELD CURVE")
+    days = st.selectbox("Lookback", [30, 60, 90, 180, 365], index=2)
+    try:
+        df = load_curve_data(max(days, 400)).dropna()
+    except Exception as e:
+        st.error(f"Could not load FRED data: {e}")
+        return
+    df = df[df.index >= df.index.max() - pd.Timedelta(days=days)]
+    tenors = list(FRED_SERIES.keys())
+
+    # 3D surface
+    surf = go.Figure(go.Surface(
+        x=tenors, y=df.index.strftime("%Y-%m-%d"), z=df[tenors].values,
+        colorscale="Turbo", colorbar=dict(title="Yield %"),
+    ))
+    surf.update_layout(
+        template="plotly_dark", height=550, margin=dict(l=0, r=0, t=30, b=0),
+        scene=dict(xaxis_title="Maturity", yaxis_title="Date", zaxis_title="Yield %"),
+    )
+    st.plotly_chart(surf, use_container_width=True)
+
+    # Curve snapshots
+    c1, c2 = st.columns(2)
+    latest = df.iloc[-1]
+    week = df.iloc[max(-6, -len(df))]
+    month = df.iloc[max(-22, -len(df))]
+    snap = go.Figure()
+    for name, row, col in [("Today", latest, "#00ff88"),
+                           ("1W ago", week, "#ffaa00"),
+                           ("1M ago", month, "#888888")]:
+        snap.add_trace(go.Scatter(x=tenors, y=row[tenors], name=name,
+                                  mode="lines+markers", line=dict(color=col)))
+    snap.update_layout(template="plotly_dark", height=350,
+                       title=f"Curve as of {df.index[-1].date()}",
+                       yaxis_title="Yield %")
+    c1.plotly_chart(snap, use_container_width=True)
+
+    # 2s10s spread (bps)
+    spread = (df["10Y"] - df["2Y"]) * 100
+    sp = go.Figure(go.Scatter(x=df.index, y=spread, line=dict(color="#4da6ff")))
+    sp.add_hline(y=0, line_dash="dot", line_color="red")
+    sp.update_layout(template="plotly_dark", height=350,
+                     title="2s10s spread (bps)", yaxis_title="bps")
+    c2.plotly_chart(sp, use_container_width=True)
+
+    # Change table
+    chg = pd.DataFrame({
+        "Yield %": latest[tenors],
+        "1D chg (bp)": (latest - df.iloc[-2])[tenors] * 100,
+        "1W chg (bp)": (latest - week)[tenors] * 100,
+        "1M chg (bp)": (latest - month)[tenors] * 100,
+    }).round(2)
+    st.dataframe(
+        chg.style.background_gradient(
+            cmap="RdYlGn_r", subset=["1D chg (bp)", "1W chg (bp)", "1M chg (bp)"], axis=None
+        ).format("{:.2f}"),
+        use_container_width=True,
+    )
+    st.caption("Source: FRED (St. Louis Fed). Daily data, published with a one-day lag.")
+
 # ---------- Data helpers ----------
 @st.cache_data(ttl=300)
 def get_history(ticker, period, interval):
@@ -1607,6 +1695,7 @@ secondary_items = [
     ("Company News", "NEWS"),
     ("Earnings", "EARNINGS"),
     ("Financials", "FA"),
+    ("Curve"),
 ]
 
 def draw_toolbar(items, row_number):
@@ -1842,3 +1931,5 @@ else:
 
     with news_area:
         show_market_headlines()
+st.divider()
+render_curve_panel()
