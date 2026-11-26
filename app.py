@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import requests
+import io
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -102,6 +103,94 @@ def render_curve_panel():
         use_container_width=True,
     )
     st.caption("Source: FRED (St. Louis Fed). Daily data, published with a one-day lag.")
+
+BOE_SERIES = {
+    "5Y": "IUDSNPY",
+    "10Y": "IUDMNPY",
+    "20Y": "IUDLNPY",
+}
+BOE_BANK_RATE = "IUDBEDR"
+
+@st.cache_data(ttl=3600)
+def load_gilt_data(days=400):
+    start = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%d/%b/%Y")
+    codes = ",".join(list(BOE_SERIES.values()) + [BOE_BANK_RATE])
+    url = (
+        "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp"
+        f"?csv.x=yes&Datefrom={start}&Dateto=now&SeriesCodes={codes}"
+        "&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N"
+    )
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    df.columns = [c.strip() for c in df.columns]
+    df["DATE"] = pd.to_datetime(df["DATE"], format="%d %b %Y", errors="coerce")
+    df = df.dropna(subset=["DATE"]).set_index("DATE").sort_index()
+    rename = {v: k for k, v in BOE_SERIES.items()}
+    rename[BOE_BANK_RATE] = "Bank Rate"
+    df = df.rename(columns=rename).apply(pd.to_numeric, errors="coerce")
+    df["Bank Rate"] = df["Bank Rate"].ffill()
+    return df.dropna(subset=list(BOE_SERIES.keys()))
+
+def render_gilt_panel():
+    st.subheader("UK GILT YIELDS")
+    days = st.selectbox("Lookback", [30, 60, 90, 180, 365], index=2, key="gilt_days")
+    try:
+        df = load_gilt_data()
+    except Exception as e:
+        st.error(f"Could not load Bank of England data: {e}")
+        return
+    if len(df) < 2:
+        st.warning("Not enough gilt data returned.")
+        return
+    full = df
+    df = df[df.index >= df.index.max() - pd.Timedelta(days=days)]
+    tenors = list(BOE_SERIES.keys())
+
+    c1, c2 = st.columns(2)
+
+    latest = full.iloc[-1]
+    week = full.iloc[max(-6, -len(full))]
+    month = full.iloc[max(-22, -len(full))]
+    snap = go.Figure()
+    for name, row, col in [("Latest", latest, "#00ff88"),
+                           ("1W ago", week, "#ffaa00"),
+                           ("1M ago", month, "#888888")]:
+        snap.add_trace(go.Scatter(x=tenors, y=row[tenors], name=name,
+                                  mode="lines+markers", line=dict(color=col)))
+    snap.update_layout(template="plotly_dark", height=350,
+                       title=f"Gilt curve as of {full.index[-1].date()}",
+                       yaxis_title="Par yield %")
+    c1.plotly_chart(snap, use_container_width=True)
+
+    hist = go.Figure()
+    for t in tenors:
+        hist.add_trace(go.Scatter(x=df.index, y=df[t], name=t, mode="lines"))
+    hist.update_layout(template="plotly_dark", height=350,
+                       title="Yield history", yaxis_title="Par yield %")
+    c2.plotly_chart(hist, use_container_width=True)
+
+    spread = (df["20Y"] - df["5Y"]) * 100
+    sp = go.Figure(go.Scatter(x=df.index, y=spread, line=dict(color="#4da6ff")))
+    sp.add_hline(y=0, line_dash="dot", line_color="red")
+    sp.update_layout(template="plotly_dark", height=300,
+                     title="5s20s spread (bps)", yaxis_title="bps")
+    st.plotly_chart(sp, use_container_width=True)
+
+    cols = tenors + ["Bank Rate"]
+    chg = pd.DataFrame({
+        "Yield %": latest[cols],
+        "1D chg (bp)": (latest - full.iloc[-2])[cols] * 100,
+        "1W chg (bp)": (latest - week)[cols] * 100,
+        "1M chg (bp)": (latest - month)[cols] * 100,
+    }).round(2)
+    st.dataframe(
+        chg.style.background_gradient(
+            cmap="RdYlGn_r", subset=["1D chg (bp)", "1W chg (bp)", "1M chg (bp)"], axis=None
+        ).format("{:.2f}"),
+        use_container_width=True,
+    )
+    st.caption("Source: Bank of England. Nominal par yields, estimated daily; latest figures can lag by a day or more.")
 
 # ---------- Data helpers ----------
 @st.cache_data(ttl=300)
@@ -1822,7 +1911,14 @@ def show_selected_panel():
         show_macro()
 
     elif ticker == "CURVE" or function == "CURVE":
-        render_curve_panel()
+        market = st.radio(
+            "Market", ["US Treasuries", "UK Gilts"],
+            horizontal=True, key="curve_market",
+        )
+        if market == "UK Gilts":
+            render_gilt_panel()
+        else:
+            render_curve_panel()
 
     elif function == "GP":
         df = get_history(ticker, period, interval)
