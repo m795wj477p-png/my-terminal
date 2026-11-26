@@ -219,7 +219,7 @@ def get_econ_series(series_id, kind):
         v = (v.pct_change(12) * 100).dropna()
     return float(v.iloc[-1]), float(v.iloc[-2]), v.index[-1].date()
 
- REAL_SERIES = {
+REAL_SERIES = {
     "US 10Y Real Yield": ("DFII10", "pct"),
     "US 10Y Yield": ("DGS10", "pct"),
     "10Y Breakeven": ("T10YIE", "pct"),
