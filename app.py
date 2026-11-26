@@ -514,7 +514,7 @@ def show_market_headlines():
 
         source = article.get("source") or "Unknown publisher"
 
-                published = pd.to_datetime(
+        published = pd.to_datetime(
                     article.get("datetime"),
                     unit="s",
                     utc=True,
