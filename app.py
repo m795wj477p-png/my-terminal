@@ -294,11 +294,10 @@ def show_real_yields_dollar():
                 <div style="font-size: 13px; color: {colour};">{change_text}</div>
                 <div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">As of {d}</div>
             </div>
-            """def show_econ_releases():
-    from html import escape
-
-   
+            """
         )
+def show_econ_releases():
+    from html import escape
         
     st.markdown("### Economic Releases")
     cols = st.columns(len(ECON_SERIES))
