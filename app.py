@@ -274,6 +274,90 @@ def show_econ_releases():
             """
         )
 
+COT_MARKETS = {
+    "EUR (Euro FX)": ("gpe5-46if", "099741", "lev_money_positions_long", "lev_money_positions_short"),
+    "GBP (British Pound)": ("gpe5-46if", "096742", "lev_money_positions_long", "lev_money_positions_short"),
+    "USD Index": ("gpe5-46if", "098662", "lev_money_positions_long", "lev_money_positions_short"),
+    "Gold": ("72hh-3qpy", "088691", "m_money_positions_long_all", "m_money_positions_short_all"),
+}
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def load_cot(dataset, code, long_f, short_f, weeks=156):
+    r = requests.get(
+        f"https://publicreporting.cftc.gov/resource/{dataset}.json",
+        params={
+            "$where": f"cftc_contract_market_code='{code}'",
+            "$order": "report_date_as_yyyy_mm_dd DESC",
+            "$limit": weeks,
+            "$select": f"report_date_as_yyyy_mm_dd,open_interest_all,{long_f},{short_f}",
+        },
+        timeout=20,
+    )
+    r.raise_for_status()
+    df = pd.DataFrame(r.json())
+    if df.empty:
+        return df
+    df = df.rename(columns={"report_date_as_yyyy_mm_dd": "date",
+                            long_f: "long", short_f: "short",
+                            "open_interest_all": "oi"})
+    df["date"] = pd.to_datetime(df["date"])
+    for c in ["long", "short", "oi"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df.dropna().sort_values("date").set_index("date")
+    df["net"] = df["long"] - df["short"]
+    return df
+
+def render_cot_panel():
+    st.subheader("COT POSITIONING (SPECULATORS)")
+    rows, data = [], {}
+    for name, (ds, code, lf, sf) in COT_MARKETS.items():
+        try:
+            df = load_cot(ds, code, lf, sf)
+        except Exception:
+            df = pd.DataFrame()
+        if len(df) < 2:
+            rows.append({"Market": name, "Report date": "n/a"})
+            continue
+        data[name] = df
+        last, prev = df.iloc[-1], df.iloc[-2]
+        year = df["net"].iloc[-52:]
+        rng = year.max() - year.min()
+        idx = (last["net"] - year.min()) / rng * 100 if rng else 50
+        rows.append({
+            "Market": name,
+            "Report date": df.index[-1].date(),
+            "Long": last["long"],
+            "Short": last["short"],
+            "Net": last["net"],
+            "Net chg w/w": last["net"] - prev["net"],
+            "Net % of OI": last["net"] / last["oi"] * 100,
+            "52w index": idx,
+        })
+    table = pd.DataFrame(rows).set_index("Market")
+    num = [c for c in ["Long", "Short", "Net", "Net chg w/w"] if c in table]
+    st.dataframe(
+        table.style
+        .format({**{c: "{:,.0f}" for c in num},
+                 "Net % of OI": "{:.1f}%", "52w index": "{:.0f}"}, na_rep="n/a")
+        .background_gradient(cmap="RdYlGn", subset=["Net chg w/w"], axis=None),
+        use_container_width=True,
+    )
+    st.caption("52w index: 0 = most bearish net position of the past year, 100 = most bullish.")
+
+    if not data:
+        st.warning("No COT data returned.")
+        return
+    pick = st.selectbox("Chart", list(data.keys()), key="cot_pick")
+    df = data[pick]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df.index, y=df["net"], name="Net",
+                         marker_color=["#22c55e" if v >= 0 else "#ef4444" for v in df["net"]]))
+    fig.update_layout(template="plotly_dark", height=380,
+                      title=f"{pick}: net speculative position (contracts)",
+                      yaxis_title="Contracts")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Source: CFTC Commitments of Traders. Positions are as of Tuesday and published the following Friday.")
+
 # ---------- Data helpers ----------
 @st.cache_data(ttl=300)
 def get_history(ticker, period, interval):
@@ -1867,6 +1951,7 @@ secondary_items = [
     ("Earnings", "EARNINGS"),
     ("Financials", "FA"),
     ("Curve", "CURVE"),
+    ("COT", "COT"),
 ]
 
 def draw_toolbar(items, row_number):
@@ -2002,6 +2087,9 @@ def show_selected_panel():
             render_gilt_panel()
         else:
             render_curve_panel()
+            
+    elif ticker == "COT" or function == "COT":
+        render_cot_panel()
 
     elif function == "GP":
         df = get_history(ticker, period, interval)
