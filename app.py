@@ -512,7 +512,7 @@ def show_market_headlines():
     for article in articles:
         st.markdown("#### " + article["headline"])
 
-                source = article.get("source") or "Unknown publisher"
+        source = article.get("source") or "Unknown publisher"
 
                 published = pd.to_datetime(
                     article.get("datetime"),
