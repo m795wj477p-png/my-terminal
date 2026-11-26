@@ -509,31 +509,31 @@ def show_market_headlines():
     st.caption(f"Last checked: {checked_at}")
 
         # Display headlines vertically in the side panel.
-    for article in articles:
+        for article in articles:
         st.markdown("#### " + article["headline"])
 
         source = article.get("source") or "Unknown publisher"
 
         published = pd.to_datetime(
-                    article.get("datetime"),
-                    unit="s",
-                    utc=True,
-                    errors="coerce",
-                )
+            article.get("datetime"),
+            unit="s",
+            utc=True,
+            errors="coerce",
+        )
 
-                if pd.notna(published):
-                    published_text = published.tz_convert(
-                        "Europe/London"
-                    ).strftime("%d %b, %H:%M %Z")
+        if pd.notna(published):
+            published_text = published.tz_convert(
+                "Europe/London"
+            ).strftime("%d %b, %H:%M %Z")
 
-                    st.caption(f"{source} | {published_text}")
-                else:
-                    st.caption(source)
+            st.caption(f"{source} | {published_text}")
+        else:
+            st.caption(source)
 
-                url = article.get("url") or ""
+        url = article.get("url") or ""
 
-                if url.startswith(("https://", "http://")):
-                    st.link_button("Read article", url)
+        if url.startswith(("https://", "http://")):
+            st.link_button("Read article", url)
 
         st.divider()
 @st.cache_data(ttl=900, show_spinner=False)
