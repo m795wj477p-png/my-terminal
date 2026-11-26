@@ -222,6 +222,84 @@ def get_econ_series(series_id, kind):
 def show_econ_releases():
     from html import escape
 
+    REAL_SERIES = {
+    "US 10Y Real Yield": ("DFII10", "pct"),
+    "US 10Y Yield": ("DGS10", "pct"),
+    "10Y Breakeven": ("T10YIE", "pct"),
+    "Broad USD Index": ("DTWEXBGS", "index"),
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_daily_series(series_id):
+    key = st.secrets["FRED_API_KEY"]
+    start = (pd.Timestamp.today() - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+    r = requests.get(
+        "https://api.stlouisfed.org/fred/series/observations",
+        params={"series_id": series_id, "api_key": key,
+                "file_type": "json", "observation_start": start},
+        timeout=15,
+    )
+    r.raise_for_status()
+    s = pd.DataFrame(r.json()["observations"])
+    s["value"] = pd.to_numeric(s["value"], errors="coerce")
+    s = s.dropna(subset=["value"])
+    return float(s["value"].iloc[-1]), float(s["value"].iloc[-2]), s["date"].iloc[-1]
+
+def show_real_yields_dollar():
+    from html import escape
+
+    st.markdown("### Real Yields & Dollar")
+    cols = st.columns(len(REAL_SERIES))
+
+    for col, (name, (sid, kind)) in zip(cols, REAL_SERIES.items()):
+        safe_name = escape(str(name))
+        try:
+            latest, prev, d = get_daily_series(sid)
+        except Exception:
+            col.metric(name, "n/a")
+            continue
+
+        diff = latest - prev
+        if kind == "pct":
+            value_text = f"{latest:.2f}%"
+            change_text = f"{diff * 100:+.0f} bp"
+        else:
+            value_text = f"{latest:.2f}"
+            change_text = f"{diff / prev * 100:+.2f}%"
+
+        if diff > 0:
+            colour = "#22c55e"
+        elif diff < 0:
+            colour = "#ef4444"
+        else:
+            colour = "#9ca3af"
+            change_text = "unchanged"
+
+        col.html(
+            f"""
+            <div style="
+                border: 1px solid rgba(128,128,128,0.25);
+                border-radius: 10px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+                box-sizing: border-box;
+                width: 100%;
+                overflow: hidden;
+            ">
+                <div style="
+                    font-size: 13px;
+                    margin-bottom: 6px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                ">{safe_name}</div>
+                <div style="font-size: 22px; font-weight: 600; color: {colour};">{value_text}</div>
+                <div style="font-size: 13px; color: {colour};">{change_text}</div>
+                <div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">As of {d}</div>
+            </div>
+            """
+        )
+        
     st.markdown("### Economic Releases")
     cols = st.columns(len(ECON_SERIES))
 
@@ -2077,6 +2155,7 @@ def show_selected_panel():
     elif ticker == "MACRO" or function == "MACRO":
         show_macro()
         show_econ_releases()
+        show_real_yields_dollar()
 
     elif ticker == "CURVE" or function == "CURVE":
         market = st.radio(
