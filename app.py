@@ -1610,16 +1610,6 @@ function = cmd[1] if len(cmd) > 1 else "GP"
 if ticker not in RESERVED_COMMANDS:
     st.session_state["terminal_last_ticker"] = ticker
 
-# The briefing includes headlines, so avoid displaying them twice.
-if ticker != "BRIEF" and function != "BRIEF":
-    main_area, news_area = st.columns([3, 1], gap="medium")
-
-    with main_area:
-        st.empty()
-
-    with news_area:
-        show_market_headlines()
-
 st.divider()
 
 # ---------- Sidebar ----------
@@ -1693,33 +1683,32 @@ interval = st.sidebar.selectbox(
 
 
 # ---------- Panels ----------
-if ticker == "SESSIONS" or function == "SESSIONS":
-    show_session_clock()
+def show_selected_panel():
+    if ticker == "SESSIONS" or function == "SESSIONS":
+        show_session_clock()
 
-elif ticker == "BRIEF" or function == "BRIEF":
-    show_morning_briefing()
-    
-if ticker == "BRIEF" or function == "BRIEF":
-    show_morning_briefing()
+    elif ticker == "BRIEF" or function == "BRIEF":
+        show_morning_briefing()
 
-elif ticker == "FA" or function == "FA":
-    show_basic_financials()
+    elif ticker == "FA" or function == "FA":
+        show_basic_financials()
 
-elif ticker == "EARNINGS" or function == "EARNINGS":
-    show_earnings_calendar()
+    elif ticker == "EARNINGS" or function == "EARNINGS":
+        show_earnings_calendar()
 
-elif ticker == "UK" or function == "UK":
-    show_uk()
+    elif ticker == "UK" or function == "UK":
+        show_uk()
 
-elif ticker == "MACRO" or function == "MACRO":
-    show_macro()
+    elif ticker == "MACRO" or function == "MACRO":
+        show_macro()
 
-elif function == "GP":
-    df = get_history(ticker, period, interval)
+    elif function == "GP":
+        df = get_history(ticker, period, interval)
 
-    if df is None or df.empty:
-        st.warning("No chart data was returned for this ticker.")
-    else:
+        if df is None or df.empty:
+            st.warning("No chart data was returned for this ticker.")
+            return
+
         df = add_indicators(df.copy())
 
         fig = make_subplots(
@@ -1799,18 +1788,27 @@ elif function == "GP":
             title=f"{ticker} Price Chart",
         )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
+        st.plotly_chart(fig, use_container_width=True)
+
+    elif function == "NEWS":
+        show_live_news(ticker)
+
+    else:
+        st.warning(
+            "Unknown function. Try GP, NEWS, FA, EARNINGS, "
+            "UK, MACRO, BRIEF or SESSIONS."
         )
 
-elif function == "NEWS":
-    show_live_news(ticker)
 
+is_briefing = ticker == "BRIEF" or function == "BRIEF"
+
+if is_briefing:
+    show_selected_panel()
 else:
-    st.warning(
-        "Unknown function. Try GP, NEWS, FA, EARNINGS, "
-        "UK, MACRO or BRIEF."
-    )
+    main_area, news_area = st.columns([3, 1], gap="large")
 
-     
+    with main_area:
+        show_selected_panel()
+
+    with news_area:
+        show_market_headlines()
