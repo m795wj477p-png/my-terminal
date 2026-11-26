@@ -508,15 +508,9 @@ def show_market_headlines():
 
     st.caption(f"Last checked: {checked_at}")
 
-    # Six stories displayed in two rows of three.
-    for start in range(0, len(articles), 3):
-        columns = st.columns(3)
-
-        for column, article in zip(
-            columns, articles[start:start + 3]
-        ):
-            with column:
-                st.markdown("#### " + article["headline"])
+        # Display headlines vertically in the side panel.
+    for article in articles:
+        st.markdown("#### " + article["headline"])
 
                 source = article.get("source") or "Unknown publisher"
 
@@ -1619,10 +1613,15 @@ if ticker not in RESERVED_COMMANDS:
 
 # The briefing includes headlines, so avoid displaying them twice.
 if ticker != "BRIEF" and function != "BRIEF":
-    show_market_headlines()
+    main_area, news_area = st.columns([3, 1], gap="medium")
+
+    with main_area:
+        st.empty()
+
+    with news_area:
+        show_market_headlines()
 
 st.divider()
-
 
 # ---------- Sidebar ----------
 @st.fragment(run_every="10s")
