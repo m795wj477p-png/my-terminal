@@ -276,7 +276,7 @@ def show_macro():
 
             safe_name = escape(str(name))
 
-                        col.html(
+            col.html(
                 f"""
                 <div style="
                     border: 1px solid rgba(128,128,128,0.25);
