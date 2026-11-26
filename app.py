@@ -192,6 +192,88 @@ def render_gilt_panel():
     )
     st.caption("Source: Bank of England. Nominal par yields, estimated daily; latest figures can lag by a day or more.")
 
+ECON_SERIES = {
+    "CPI (YoY)": ("CPIAUCSL", "yoy"),
+    "PPI (YoY)": ("PPIACO", "yoy"),
+    "Jobless Claims": ("ICSA", "count"),
+    "Unemployment": ("UNRATE", "pct"),
+}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_econ_series(series_id, kind):
+    key = st.secrets["FRED_API_KEY"]
+    start = (pd.Timestamp.today() - pd.Timedelta(days=900)).strftime("%Y-%m-%d")
+    r = requests.get(
+        "https://api.stlouisfed.org/fred/series/observations",
+        params={"series_id": series_id, "api_key": key,
+                "file_type": "json", "observation_start": start},
+        timeout=15,
+    )
+    r.raise_for_status()
+    s = pd.DataFrame(r.json()["observations"])
+    s["value"] = pd.to_numeric(s["value"], errors="coerce")
+    s = s.dropna(subset=["value"])
+    s.index = pd.to_datetime(s["date"])
+    v = s["value"]
+    if kind == "yoy":
+        v = (v.pct_change(12) * 100).dropna()
+    return float(v.iloc[-1]), float(v.iloc[-2]), v.index[-1].date()
+
+def show_econ_releases():
+    from html import escape
+
+    st.markdown("### Economic Releases")
+    cols = st.columns(len(ECON_SERIES))
+
+    for col, (name, (sid, kind)) in zip(cols, ECON_SERIES.items()):
+        safe_name = escape(str(name))
+        try:
+            latest, prev, d = get_econ_series(sid, kind)
+        except Exception:
+            col.metric(name, "n/a")
+            continue
+
+        diff = latest - prev
+        if kind == "count":
+            value_text = f"{latest:,.0f}"
+            change_text = f"{diff:+,.0f}"
+        else:
+            value_text = f"{latest:.2f}%"
+            change_text = f"{diff:+.2f} pts"
+
+        if diff > 0:
+            colour = "#22c55e"
+        elif diff < 0:
+            colour = "#ef4444"
+        else:
+            colour = "#9ca3af"
+            change_text = "unchanged"
+
+        col.html(
+            f"""
+            <div style="
+                border: 1px solid rgba(128,128,128,0.25);
+                border-radius: 10px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+                box-sizing: border-box;
+                width: 100%;
+                overflow: hidden;
+            ">
+                <div style="
+                    font-size: 13px;
+                    margin-bottom: 6px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                ">{safe_name}</div>
+                <div style="font-size: 22px; font-weight: 600; color: {colour};">{value_text}</div>
+                <div style="font-size: 13px; color: {colour};">{change_text}</div>
+                <div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Period: {d}</div>
+            </div>
+            """
+        )
+
 # ---------- Data helpers ----------
 @st.cache_data(ttl=300)
 def get_history(ticker, period, interval):
@@ -1909,6 +1991,7 @@ def show_selected_panel():
 
     elif ticker == "MACRO" or function == "MACRO":
         show_macro()
+        show_econ_releases()
 
     elif ticker == "CURVE" or function == "CURVE":
         market = st.radio(
