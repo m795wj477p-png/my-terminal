@@ -508,8 +508,7 @@ def show_market_headlines():
 
     st.caption(f"Last checked: {checked_at}")
 
-        # Display headlines vertically in the side panel.
-        for article in articles:
+    for article in articles:
         st.markdown("#### " + article["headline"])
 
         source = article.get("source") or "Unknown publisher"
