@@ -276,33 +276,41 @@ def show_macro():
 
             safe_name = escape(str(name))
 
-            col.html(
+                        col.html(
                 f"""
                 <div style="
                     border: 1px solid rgba(128,128,128,0.25);
                     border-radius: 10px;
-                    padding: 14px;
+                    padding: 10px 12px;
                     margin-bottom: 12px;
+                    box-sizing: border-box;
+                    width: 100%;
+                    overflow: hidden;
                 ">
                     <div style="
-                        font-size: 14px;
-                        margin-bottom: 8px;
+                        font-size: 13px;
+                        margin-bottom: 6px;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
                     ">{safe_name}</div>
 
                     <div style="
                         color: {colour};
-                        font-size: 30px;
+                        font-size: clamp(16px, 1.7vw, 26px);
                         font-weight: 700;
                         line-height: 1.2;
+                        white-space: nowrap;
                     ">{price:,.2f}</div>
 
                     <div style="
                         color: {colour};
-                        font-size: 16px;
-                        margin-top: 8px;
+                        font-size: clamp(12px, 1.1vw, 15px);
+                        margin-top: 6px;
+                        white-space: nowrap;
                     ">{change_text}</div>
                 </div>
-                               """
+                """
             )
 
     checked_at = pd.Timestamp.now(
