@@ -1571,7 +1571,29 @@ def open_terminal_panel(panel):
         )
 
 
+@st.fragment(run_every="1s")
+def show_top_clock():
+    from zoneinfo import ZoneInfo
+
+    now_london = pd.Timestamp.now(
+        tz=ZoneInfo("Europe/London")
+    )
+
+    st.markdown(
+        f"""
+        <div style="
+            font-family: monospace;
+            color: #ffb000;
+            font-size: 18px;
+            margin-bottom: 6px;
+        ">
+            {now_london.strftime("%H:%M:%S %Z")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 st.title("MY TERMINAL")
+show_top_clock()
 
 primary_items = [
     ("Briefing", "BRIEF"),
