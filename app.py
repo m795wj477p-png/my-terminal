@@ -743,7 +743,7 @@ def show_macro():
         "Source data may be cached or delayed."
     )
 
-       render_correlation_alerts()
+    render_correlation_alerts()
 
     with st.expander("Cross-asset correlation"):
         render_correlation_panel()
