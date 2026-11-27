@@ -2222,6 +2222,87 @@ def render_calendar_panel():
     if missing:
         st.caption("Could not load: " + ", ".join(missing))
     st.caption("US data dates from FRED, assumed 08:30 ET. Central bank dates entered manually. No forecasts shown.")
+
+import io
+
+BOE_HEADERS = {"User-Agent": "My Terminal thomaslower2@gmail.com"}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_boe_series(code, days=45):
+    start = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%d/%b/%Y")
+    url = (
+        "https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp"
+        f"?csv.x=yes&Datefrom={start}&Dateto=now&SeriesCodes={code}"
+        "&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N"
+    )
+    r = requests.get(url, headers=BOE_HEADERS, timeout=20)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    s = pd.Series(
+        pd.to_numeric(df[code], errors="coerce").values,
+        index=pd.to_datetime(df["DATE"], format="%d %b %Y"),
+    ).dropna()
+    if s.empty:
+        raise ValueError("empty BoE series")
+    return s
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_fred_series(series_id, days=45):
+    start = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    r = requests.get(
+        "https://api.stlouisfed.org/fred/series/observations",
+        params={"series_id": series_id, "api_key": st.secrets["FRED_API_KEY"],
+                "file_type": "json", "observation_start": start},
+        timeout=15,
+    )
+    r.raise_for_status()
+    df = pd.DataFrame(r.json()["observations"])
+    s = pd.Series(pd.to_numeric(df["value"], errors="coerce").values,
+                  index=pd.to_datetime(df["date"])).dropna()
+    return s
+
+def _spread_card(col, name, value_text, change_text, diff, as_of):
+    from html import escape
+    colour = "#22c55e" if diff > 0 else "#ef4444" if diff < 0 else "#9ca3af"
+    col.html(
+        f"""
+        <div style="border: 1px solid rgba(128,128,128,0.25); border-radius: 10px;
+            padding: 10px 12px; margin-bottom: 12px; box-sizing: border-box;
+            width: 100%; overflow: hidden;">
+            <div style="font-size: 13px; margin-bottom: 6px; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis;">{escape(name)}</div>
+            <div style="font-size: 22px; font-weight: 600; color: {colour};">{value_text}</div>
+            <div style="font-size: 13px; color: {colour};">{change_text}</div>
+            <div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">As of {as_of}</div>
+        </div>
+        """
+    )
+
+def show_uk_us_spread():
+    st.markdown("### UK-US 10Y Spread")
+    cols = st.columns(4)
+    try:
+        uk = get_boe_series("IUDMNZC")
+        us = get_fred_series("DGS10")
+        both = pd.concat([uk.rename("uk"), us.rename("us")], axis=1).dropna()
+        spread = both["uk"] - both["us"]
+        if len(both) < 2:
+            raise ValueError("not enough overlapping dates")
+    except Exception as e:
+        cols[0].metric("UK-US 10Y Spread", "n/a")
+        st.caption(f"UK data unavailable: {type(e).__name__}")
+        return
+
+    last_date = both.index[-1].date()
+    for col, name, ser in [(cols[0], "UK 10Y Gilt", both["uk"]),
+                           (cols[1], "US 10Y Treasury", both["us"])]:
+        d = ser.iloc[-1] - ser.iloc[-2]
+        _spread_card(col, name, f"{ser.iloc[-1]:.2f}%", f"{d * 100:+.0f} bp", d, last_date)
+
+    d = spread.iloc[-1] - spread.iloc[-2]
+    _spread_card(cols[2], "UK-US 10Y Spread", f"{spread.iloc[-1] * 100:+.0f} bp",
+                 f"{d * 100:+.0f} bp d/d", d, last_date)
+    st.caption("UK: BoE nominal 10Y spot yield. US: FRED DGS10. Dates matched; the UK series usually lags by about a day.")
     
 # ---------- Panels ----------
 def show_selected_panel():
@@ -2255,6 +2336,7 @@ def show_selected_panel():
         )
         if market == "UK Gilts":
             render_gilt_panel()
+            show_uk_us_spread()
         else:
             render_curve_panel()
             
