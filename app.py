@@ -751,6 +751,9 @@ def show_macro():
     with st.expander("Sector performance"):
         render_sector_heatmap()
 
+    with st.expander("Rolling correlation"):
+        render_rolling_correlation()
+
     st.markdown("### Chart")
 
     names = {
@@ -2218,6 +2221,52 @@ def render_sector_heatmap():
     st.caption(
         "SPDR sector ETFs, change over the chosen period to the latest "
         "daily close. Tiles are equal size, not weighted by market cap."
+    )
+
+def render_rolling_correlation():
+    rets = load_corr_returns(tuple(CORR_SYMBOLS), "1y")
+    syms = list(rets.columns)
+    fmt = lambda s: WATCHLIST_NAMES.get(s, s)
+
+    def pick(sym, fallback):
+        return syms.index(sym) if sym in syms else fallback
+
+    c1, c2, c3, c4 = st.columns(4)
+    a = c1.selectbox("Asset A", syms, index=pick("GC=F", 0),
+                     format_func=fmt, key="roll_a")
+    b = c2.selectbox("Asset B", syms, index=pick("DX-Y.NYB", 1),
+                     format_func=fmt, key="roll_b")
+    window = c3.selectbox("Window (days)", [20, 60, 120], index=1,
+                          key="roll_window")
+    ma = c4.slider("Moving avg (days)", 5, 60, 20, key="roll_ma")
+
+    if a == b:
+        st.caption("Pick two different assets.")
+        return
+
+    roll = rets[a].rolling(window).corr(rets[b]).dropna()
+    smooth = roll.rolling(ma).mean()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=roll.index, y=roll, name=f"{window}d correlation",
+                             line=dict(color="#666666", width=1)))
+    fig.add_trace(go.Scatter(x=smooth.index, y=smooth, name=f"{ma}d moving avg",
+                             line=dict(color="#ffb000", width=2.5)))
+    fig.add_hline(y=0, line=dict(color="#888888", width=1))
+    fig.add_hline(y=float(roll.mean()), line=dict(color="#00c8ff", dash="dash"),
+                  annotation_text=f"avg {roll.mean():+.2f}")
+    fig.update_layout(
+        height=380, yaxis=dict(range=[-1, 1]),
+        paper_bgcolor="#000", plot_bgcolor="#000",
+        font=dict(color="#ffb000", family="monospace"),
+        legend=dict(orientation="h", y=1.1),
+        margin=dict(t=30, l=0, r=0, b=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"Latest: {roll.iloc[-1]:+.2f} ({window}d), "
+        f"{smooth.iloc[-1]:+.2f} ({ma}d average). "
+        "Daily % changes; one year of history."
     )
         
 @st.fragment(run_every="10s")
