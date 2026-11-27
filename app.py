@@ -2020,6 +2020,7 @@ primary_items = [
     ("Macro", "MACRO"),
     ("UK", "UK"),
     ("Chart", "GP"),
+    ("Calendar", "CAL"),
 ]
 
 secondary_items = [
@@ -2134,11 +2135,102 @@ interval = st.sidebar.selectbox(
 )
 
 
+from zoneinfo import ZoneInfo
+from datetime import datetime, date, time as dtime
+
+CAL_RELEASES = {
+    10: ("US CPI", "High"),
+    50: ("US Non-Farm Payrolls / Unemployment", "High"),
+    180: ("US Initial Jobless Claims", "Medium"),
+    46: ("US PPI", "Medium"),
+    53: ("US GDP", "High"),
+    54: ("US PCE Inflation", "High"),
+    9: ("US Retail Sales", "Medium"),
+}
+
+CAL_MANUAL = [
+    ("2026-12-09", "14:00", "America/New_York", "FOMC rate decision", "High"),
+    ("2026-12-17", "12:00", "Europe/London", "BoE rate decision", "High"),
+]
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def get_release_dates(release_id):
+    r = requests.get(
+        "https://api.stlouisfed.org/fred/release/dates",
+        params={
+            "release_id": release_id,
+            "api_key": st.secrets["FRED_API_KEY"],
+            "file_type": "json",
+            "realtime_start": date.today().strftime("%Y-%m-%d"),
+            "realtime_end": "9999-12-31",
+            "include_release_dates_with_no_data": "true",
+            "sort_order": "desc",
+            "limit": 30,
+        },
+        timeout=15,
+    )
+    r.raise_for_status()
+    return [d["date"] for d in r.json().get("release_dates", [])]
+
+def build_calendar(days_ahead):
+    london = ZoneInfo("Europe/London")
+    now = datetime.now(london)
+    end = now + pd.Timedelta(days=days_ahead)
+    rows, missing = [], []
+
+    for rid, (name, impact) in CAL_RELEASES.items():
+        try:
+            dates = get_release_dates(rid)
+        except Exception:
+            missing.append(name)
+            continue
+        for d in dates:
+            dt = datetime.combine(
+                date.fromisoformat(d), dtime(8, 30), tzinfo=ZoneInfo("America/New_York")
+            ).astimezone(london)
+            rows.append((dt, name, impact))
+
+    for d, t, tz, name, impact in CAL_MANUAL:
+        hh, mm = map(int, t.split(":"))
+        dt = datetime.combine(date.fromisoformat(d), dtime(hh, mm), tzinfo=ZoneInfo(tz)).astimezone(london)
+        rows.append((dt, name, impact))
+
+    rows = sorted([r for r in rows if now - pd.Timedelta(hours=2) <= r[0] <= end])
+    return rows, missing
+
+def render_calendar_panel():
+    st.subheader("ECONOMIC CALENDAR (LONDON TIME)")
+    days = st.radio("Window", [7, 14, 30], index=1, horizontal=True,
+                    format_func=lambda x: f"Next {x} days", key="cal_days")
+    rows, missing = build_calendar(days)
+
+    if not rows:
+        st.info("No events found in this window.")
+    else:
+        table = pd.DataFrame(
+            [{"Day": dt.strftime("%a %d %b"), "Time": dt.strftime("%H:%M"),
+              "Event": name, "Impact": impact} for dt, name, impact in rows]
+        )
+
+        def colour(v):
+            return {"High": "color: #ef4444; font-weight: 600",
+                    "Medium": "color: #f59e0b"}.get(v, "")
+
+        st.dataframe(table.style.map(colour, subset=["Impact"]),
+                     use_container_width=True, hide_index=True)
+
+    if missing:
+        st.caption("Could not load: " + ", ".join(missing))
+    st.caption("US data dates from FRED, assumed 08:30 ET. Central bank dates entered manually. No forecasts shown.")
+    
 # ---------- Panels ----------
 def show_selected_panel():
     if ticker == "SESSIONS" or function == "SESSIONS":
         show_session_clock()
 
+    elif ticker == "CAL" or function == "CAL":
+        render_calendar_panel()
+    
     elif ticker == "BRIEF" or function == "BRIEF":
         show_morning_briefing()
 
