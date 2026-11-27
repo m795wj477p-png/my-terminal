@@ -750,44 +750,6 @@ def show_macro():
     
     with st.expander("Cross-asset correlation"):
         render_correlation_panel()
-    def get_correlation_alerts(threshold=0.5, short=20, long=120):
-    rets = load_corr_returns(tuple(CORR_SYMBOLS), "1y")
-    recent = rets.tail(short).corr()
-    base = rets.tail(long).corr()
-    cols = list(rets.columns)
-    alerts = []
-    for i, a in enumerate(cols):
-        for b in cols[i + 1:]:
-            r, s = recent.loc[a, b], base.loc[a, b]
-            if pd.isna(r) or pd.isna(s):
-                continue
-            if abs(r - s) >= threshold:
-                alerts.append((a, b, s, r, r - s))
-    alerts.sort(key=lambda x: abs(x[4]), reverse=True)
-    return alerts
-
-
-def render_correlation_alerts(threshold=0.5, short=20, long=120):
-    try:
-        alerts = get_correlation_alerts(threshold, short, long)
-    except Exception as e:
-        st.caption(f"Correlation alerts unavailable: {type(e).__name__}")
-        return
-
-    if not alerts:
-        st.caption(
-            f"No correlation shifts of {threshold}+ "
-            f"({short}-day vs {long}-day)."
-        )
-        return
-
-    st.markdown("### Correlation alerts")
-    for a, b, base, recent, diff in alerts[:5]:
-        na, nb = WATCHLIST_NAMES.get(a, a), WATCHLIST_NAMES.get(b, b)
-        st.warning(
-            f"{na} / {nb}: {base:+.2f} (baseline) → "
-            f"{recent:+.2f} (last {short}d), shift {diff:+.2f}"
-        )
 
     st.markdown("### Chart")
 
@@ -2170,6 +2132,46 @@ def render_correlation_panel():
         "so their % changes are noisy. Different market hours blur "
         "the figures slightly."
     )
+
+def get_correlation_alerts(threshold=0.5, short=20, long=120):
+    rets = load_corr_returns(tuple(CORR_SYMBOLS), "1y")
+    recent = rets.tail(short).corr()
+    base = rets.tail(long).corr()
+    cols = list(rets.columns)
+    alerts = []
+    for i, a in enumerate(cols):
+        for b in cols[i + 1:]:
+            r, s = recent.loc[a, b], base.loc[a, b]
+            if pd.isna(r) or pd.isna(s):
+                continue
+            if abs(r - s) >= threshold:
+                alerts.append((a, b, s, r, r - s))
+    alerts.sort(key=lambda x: abs(x[4]), reverse=True)
+    return alerts
+
+
+def render_correlation_alerts(threshold=0.5, short=20, long=120):
+    try:
+        alerts = get_correlation_alerts(threshold, short, long)
+    except Exception as e:
+        st.caption(f"Correlation alerts unavailable: {type(e).__name__}")
+        return
+
+    if not alerts:
+        st.caption(
+            f"No correlation shifts of {threshold}+ "
+            f"({short}-day vs {long}-day)."
+        )
+        return
+
+    st.markdown("### Correlation alerts")
+    for a, b, base, recent, diff in alerts[:5]:
+        na, nb = WATCHLIST_NAMES.get(a, a), WATCHLIST_NAMES.get(b, b)
+        st.warning(
+            f"{na} / {nb}: {base:+.2f} (baseline) → "
+            f"{recent:+.2f} (last {short}d), shift {diff:+.2f}"
+        )
+        
 @st.fragment(run_every="10s")
 def show_watchlist():
     st.header("Watchlist")
