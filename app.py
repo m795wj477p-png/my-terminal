@@ -2073,11 +2073,12 @@ def show_watchlist():
     watchlist = st.text_area(
         "Tickers",
         value=(
+            "^GSPC\n"
+            "^IXIC\n"
             "GC=F\n"
-            "NQ=F\n"
             "EURUSD=X\n"
             "GBPUSD=X\n"
-            "BTC-USD"
+            "^TNX"
         ),
         height=230,
         key="watchlist_tickers",
@@ -2222,6 +2223,32 @@ def render_calendar_panel():
     if missing:
         st.caption("Could not load: " + ", ".join(missing))
     st.caption("US data dates from FRED, assumed 08:30 ET. Central bank dates entered manually. No forecasts shown.")
+
+def show_sidebar_calendar():
+    with st.sidebar:
+        with st.expander("Upcoming releases", expanded=True):
+            try:
+                rows, missing = build_calendar(7)
+            except Exception:
+                st.caption("Calendar unavailable")
+                return
+
+            keys = ("CPI", "PPI", "JOBLESS", "CLAIMS", "PAYROLL", "NFP")
+            picked = [
+                r for r in rows
+                if r[2] == "High" or any(k in r[1].upper() for k in keys)
+            ][:8]
+
+            if not picked:
+                st.caption("No major releases in the next 7 days")
+            else:
+                for dt, name, impact in picked:
+                    st.caption(f"{dt.strftime('%a %d %b %H:%M')} · {name}")
+
+            st.caption("London time")
+
+
+show_sidebar_calendar()
 
 import io
 
