@@ -2091,7 +2091,7 @@ def show_watchlist():
         "Tickers",
         value=(
             "^GSPC\n"
-            "^NDX\"
+            "^NDX\n"
             "GC=F\n"
             "EURUSD=X\n"
             "GBPUSD=X\n"
