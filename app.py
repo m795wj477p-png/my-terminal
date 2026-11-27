@@ -2066,7 +2066,6 @@ if ticker not in RESERVED_COMMANDS:
 st.divider()
 
 # ---------- Sidebar ----------
-@st.fragment(run_every="10s")
 WATCHLIST_NAMES = {
     "^GSPC": "S&P 500",
     "^NDX": "Nasdaq",
@@ -2084,6 +2083,7 @@ WATCHLIST_NAMES = {
     "ES=F": "S&P Futures",
     "BTC-USD": "Bitcoin",
 }
+@st.fragment(run_every="10s")
 def show_watchlist():
     st.header("Watchlist")
 
