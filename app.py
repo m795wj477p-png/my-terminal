@@ -2347,6 +2347,44 @@ def show_uk_us_spread():
     _spread_card(cols[2], "UK-US 10Y Spread", f"{spread.iloc[-1] * 100:+.0f} bp",
                  f"{d * 100:+.0f} bp d/d", d, last_date)
     st.caption("UK: BoE nominal 10Y spot yield. US: FRED DGS10. Dates matched; the UK series usually lags by about a day.")
+
+def show_sidebar_uk_rates():
+    with st.sidebar:
+        with st.expander("UK rates", expanded=True):
+            try:
+                uk = get_boe_series("IUDMNZC")
+                us = get_fred_series("DGS10")
+                both = pd.concat(
+                    [uk.rename("uk"), us.rename("us")], axis=1
+                ).dropna()
+                if len(both) < 2:
+                    raise ValueError("not enough overlapping dates")
+                spread = both["uk"] - both["us"]
+            except Exception as e:
+                st.caption(f"UK data unavailable: {type(e).__name__}")
+                return
+
+            d_uk = both["uk"].iloc[-1] - both["uk"].iloc[-2]
+            d_sp = spread.iloc[-1] - spread.iloc[-2]
+
+            st.metric(
+                "UK 10Y Gilt",
+                f"{both['uk'].iloc[-1]:.2f}%",
+                f"{d_uk * 100:+.0f} bp",
+            )
+            st.metric(
+                "UK-US 10Y Spread",
+                f"{spread.iloc[-1] * 100:+.0f} bp",
+                f"{d_sp * 100:+.0f} bp d/d",
+            )
+            st.caption(
+                f"As of {both.index[-1].date()}. BoE nominal spot vs "
+                "FRED par yield, so the level is approximate. "
+                "The UK series usually lags by about a day."
+            )
+
+
+show_sidebar_uk_rates()
     
 # ---------- Panels ----------
 def show_selected_panel():
