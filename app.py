@@ -2068,7 +2068,7 @@ st.divider()
 # ---------- Sidebar ----------
 WATCHLIST_NAMES = {
     "^GSPC": "S&P 500",
-    "^NDX": "Nasdaq",
+    "^IXIC": "Nasdaq",
     "GC=F": "Gold",
     "EURUSD=X": "EUR/USD",
     "GBPUSD=X": "GBP/USD",
@@ -2091,7 +2091,7 @@ def show_watchlist():
         "Tickers",
         value=(
             "^GSPC\n"
-            "^NDX"
+            "^IXIC"
             "GC=F\n"
             "EURUSD=X\n"
             "GBPUSD=X\n"
