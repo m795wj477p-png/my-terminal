@@ -748,6 +748,9 @@ def show_macro():
     with st.expander("Cross-asset correlation"):
         render_correlation_panel()
 
+    with st.expander("Sector performance"):
+        render_sector_heatmap()
+
     st.markdown("### Chart")
 
     names = {
@@ -2168,6 +2171,54 @@ def render_correlation_alerts(threshold=0.5, short=20, long=120):
             f"{na} / {nb}: {base:+.2f} (baseline) → "
             f"{recent:+.2f} (last {short}d), shift {diff:+.2f}"
         )
+
+SECTOR_ETFS = {
+    "XLK": "Technology", "XLF": "Financials", "XLE": "Energy",
+    "XLV": "Health Care", "XLY": "Cons. Discretionary",
+    "XLP": "Cons. Staples", "XLI": "Industrials", "XLB": "Materials",
+    "XLU": "Utilities", "XLRE": "Real Estate", "XLC": "Comm. Services",
+}
+
+
+@st.cache_data(ttl=600)
+def load_sector_changes(window):
+    px = yf.download(list(SECTOR_ETFS), period="3mo", interval="1d",
+                     progress=False, auto_adjust=True)["Close"]
+    px = px.dropna(how="all").ffill()
+    days = {"1D": 1, "5D": 5, "1M": 21}[window]
+    return (px.iloc[-1] / px.iloc[-1 - days] - 1) * 100
+
+
+def render_sector_heatmap():
+    window = st.radio("Period", ["1D", "5D", "1M"], horizontal=True,
+                      key="sector_window")
+    try:
+        chg = load_sector_changes(window).dropna()
+    except Exception as e:
+        st.caption(f"Sector data unavailable: {type(e).__name__}")
+        return
+
+    labels = [f"{SECTOR_ETFS[t]} ({t})" for t in chg.index]
+    lim = {"1D": 3, "5D": 5, "1M": 8}[window]
+    fig = go.Figure(go.Treemap(
+        labels=labels,
+        parents=[""] * len(labels),
+        values=[1] * len(labels),
+        customdata=chg.values,
+        texttemplate="%{label}<br>%{customdata:+.2f}%",
+        marker=dict(colors=chg.values, colorscale="RdYlGn",
+                    cmin=-lim, cmax=lim),
+        hovertemplate="%{label}: %{customdata:+.2f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        height=420, margin=dict(t=10, l=0, r=0, b=0),
+        paper_bgcolor="#000", font=dict(color="#000", family="monospace"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "SPDR sector ETFs, change over the chosen period to the latest "
+        "daily close. Tiles are equal size, not weighted by market cap."
+    )
         
 @st.fragment(run_every="10s")
 def show_watchlist():
