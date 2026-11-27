@@ -2330,6 +2330,10 @@ def show_selected_panel():
         show_real_yields_dollar()
 
     elif ticker == "CURVE" or function == "CURVE":
+        if st.button("Refresh curve data", key="curve_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+
         market = st.radio(
             "Market", ["US Treasuries", "UK Gilts"],
             horizontal=True, key="curve_market",
