@@ -2130,7 +2130,7 @@ def render_correlation_panel():
         "the figures slightly."
     )
 
-def get_correlation_alerts(threshold=0.5, short=20, long=120):
+def get_correlation_alerts(threshold=0.2, short=20, long=120):
     rets = load_corr_returns(tuple(CORR_SYMBOLS), "1y")
     recent = rets.tail(short).corr()
     base = rets.tail(long).corr()
