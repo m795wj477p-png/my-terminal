@@ -2067,6 +2067,23 @@ st.divider()
 
 # ---------- Sidebar ----------
 @st.fragment(run_every="10s")
+WATCHLIST_NAMES = {
+    "^GSPC": "S&P 500",
+    "^NDX": "Nasdaq",
+    "GC=F": "Gold",
+    "EURUSD=X": "EUR/USD",
+    "GBPUSD=X": "GBP/USD",
+    "^TNX": "US 10Y Yield",
+    "^VIX": "VIX",
+    "DX-Y.NYB": "US Dollar Index",
+    "CL=F": "WTI Crude",
+    "BZ=F": "Brent Crude",
+    "SI=F": "Silver",
+    "HG=F": "Copper",
+    "NQ=F": "Nasdaq Futures",
+    "ES=F": "S&P Futures",
+    "BTC-USD": "Bitcoin",
+}
 def show_watchlist():
     st.header("Watchlist")
 
@@ -2074,7 +2091,7 @@ def show_watchlist():
         "Tickers",
         value=(
             "^GSPC\n"
-            "^IXIC\n"
+            "^NDX"
             "GC=F\n"
             "EURUSD=X\n"
             "GBPUSD=X\n"
@@ -2096,7 +2113,7 @@ def show_watchlist():
                 )
 
                 st.metric(
-                    label=t,
+                    label=WATCHLIST_NAMES.get(t, t),
                     value=f"{price:,.2f}",
                     delta=change_text,
                     delta_color="normal",
