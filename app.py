@@ -747,9 +747,6 @@ def show_macro():
 
     with st.expander("Cross-asset correlation"):
         render_correlation_panel()
-    
-    with st.expander("Cross-asset correlation"):
-        render_correlation_panel()
 
     st.markdown("### Chart")
 
