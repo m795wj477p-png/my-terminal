@@ -743,6 +743,9 @@ def show_macro():
         "Source data may be cached or delayed."
     )
 
+    with st.expander("Cross-asset correlation"):
+        render_correlation_panel()
+
     st.markdown("### Chart")
 
     names = {
@@ -2083,6 +2086,47 @@ WATCHLIST_NAMES = {
     "ES=F": "S&P Futures",
     "BTC-USD": "Bitcoin",
 }
+CORR_SYMBOLS = ["^GSPC", "^IXIC", "GC=F", "EURUSD=X", "GBPUSD=X",
+                "^TNX", "^VIX", "DX-Y.NYB", "CL=F"]
+
+
+@st.cache_data(ttl=1800)
+def load_corr_returns(symbols, period):
+    px = yf.download(list(symbols), period=period, interval="1d",
+                     progress=False, auto_adjust=True)["Close"]
+    px = px.dropna(how="all").ffill()
+    return px.pct_change().dropna(how="all")
+
+
+def render_correlation_panel():
+    st.subheader("CROSS-ASSET CORRELATION")
+    period = st.radio("Window", ["3mo", "6mo", "1y"], index=1,
+                      horizontal=True, key="corr_window")
+    try:
+        rets = load_corr_returns(tuple(CORR_SYMBOLS), period)
+        corr = rets.corr()
+    except Exception as e:
+        st.caption(f"Correlation data unavailable: {type(e).__name__}")
+        return
+
+    labels = [WATCHLIST_NAMES.get(c, c) for c in corr.columns]
+    fig = go.Figure(go.Heatmap(
+        z=corr.values, x=labels, y=labels,
+        zmin=-1, zmax=1, colorscale="RdYlGn",
+        text=corr.round(2).values, texttemplate="%{text}",
+    ))
+    fig.update_layout(
+        height=550, paper_bgcolor="#000", plot_bgcolor="#000",
+        font=dict(color="#ffb000", family="monospace"),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Correlation of daily percentage changes. +1 moves together, "
+        "-1 moves opposite, 0 unrelated. Yields and VIX are levels, "
+        "so their % changes are noisy. Different market hours blur "
+        "the figures slightly."
+    )
 @st.fragment(run_every="10s")
 def show_watchlist():
     st.header("Watchlist")
